@@ -10,6 +10,15 @@ struct Board {
     rooks: u64,
     queens: u64,
     kings: u64,
+    /// Miscellaneous information about the board state.
+    ///
+    /// From least significant bit:
+    /// - 6 bits: Halfmove clock
+    /// - 1 bit: White's queenside castling rights
+    /// - 1 bit: White's kingside castling rights
+    /// - 1 bit: Black's queenside castling rights
+    /// - 1 bit: Black's kingside castling rights
+    other: u16,
 }
 
 enum PieceType {
@@ -72,6 +81,7 @@ impl Board {
             rooks,
             queens,
             kings,
+            other: 0b1111,
         }
     }
 
@@ -85,6 +95,101 @@ impl Board {
                 PieceType::Queen => self.queens,
                 PieceType::King => self.kings,
             }
+    }
+
+    pub fn make_move(mut self, mov: &Move) {
+        let start_mask = 1 << mov.starting_index();
+        let end_mask = 1 << mov.ending_index();
+        let mut halfmove_reset = false;
+
+        // Check piece color
+        if start_mask & self.white != 0 {
+            self.white &= !start_mask; // Remove from start square
+            self.white |= end_mask; // Add to end square
+            // If capture
+            if self.black & end_mask != 0 {
+                // Reset halfmove clock to 0
+                self.other &= 0b1111 << 6;
+                self.black &= !end_mask;
+                halfmove_reset = true;
+            }
+        } else {
+            self.black &= !start_mask;
+            self.black |= end_mask;
+            // If capture
+            if self.white & end_mask != 0 {
+                self.other &= 0b1111 << 4;
+                self.white &= !end_mask;
+                halfmove_reset = true;
+            }
+        }
+
+        // Clear piece from end square for captures
+        self.pawns &= !end_mask;
+        self.knights &= !end_mask;
+        self.bishops &= !end_mask;
+        self.rooks &= !end_mask;
+        self.queens &= !end_mask;
+        self.kings &= !end_mask;
+
+        // Check piece type
+        if self.pawns & start_mask != 0 {
+            self.other &= 0b1111 << 6;
+            self.pawns &= !start_mask;
+            self.pawns |= end_mask;
+            halfmove_reset = true;
+        } else if self.knights & start_mask != 0 {
+            self.knights &= !start_mask;
+            self.knights |= end_mask;
+        } else if self.bishops & start_mask != 0 {
+            self.bishops &= !start_mask;
+            self.bishops |= end_mask;
+        } else if self.rooks & start_mask != 0 {
+            self.rooks &= !start_mask;
+            self.rooks |= end_mask;
+        } else if self.queens & start_mask != 0 {
+            self.queens &= !start_mask;
+            self.queens |= end_mask;
+        } else if self.kings & start_mask != 0 {
+            self.kings &= !start_mask;
+            self.kings |= end_mask;
+        }
+
+        if !halfmove_reset {
+            self.other += 1;
+        }
+    }
+}
+
+/// Represents a move in the game.
+///
+/// From least significant bit:
+/// - 6 bits: starting square
+/// - 6 bits: ending square
+/// - 4 bits: flags
+///   - 0b0000: None
+///   - 0b0001: En passant
+///   - 0b0010: Castle
+///   - 0b0011: Double pawn push
+///   - 0b0100: Queen promotion
+///   - 0b0101: Rook promotion
+///   - 0b0110: Bishop promotion
+///   - 0b0111: Knight promotion
+struct Move {
+    data: u16,
+}
+
+impl Move {
+    pub fn starting_index(&self) -> u8 {
+        (self.data & 0x3F) as u8
+    }
+
+    pub fn ending_index(&self) -> u8 {
+        ((self.data >> 6) & 0x3F) as u8
+    }
+
+    pub fn flags(&self) -> u8 {
+        (self.data >> 12) as u8
     }
 }
 
