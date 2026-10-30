@@ -30,6 +30,38 @@ enum PieceType {
     King,
 }
 
+/// Represents a move in the game.
+///
+/// From least significant bit:
+/// - 6 bits: starting square
+/// - 6 bits: ending square
+/// - 4 bits: flags
+///   - 0b0000: None
+///   - 0b0001: En passant
+///   - 0b0010: Castle
+///   - 0b0011: Double pawn push
+///   - 0b0100: Queen promotion
+///   - 0b0101: Rook promotion
+///   - 0b0110: Bishop promotion
+///   - 0b0111: Knight promotion
+struct Move {
+    data: u16,
+}
+
+impl Move {
+    pub fn starting_index(&self) -> u8 {
+        (self.data & 0x3F) as u8
+    }
+
+    pub fn ending_index(&self) -> u8 {
+        ((self.data >> 6) & 0x3F) as u8
+    }
+
+    pub fn flags(&self) -> u8 {
+        (self.data >> 12) as u8
+    }
+}
+
 impl Board {
     pub fn starting() -> Self {
         Self::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR")
@@ -120,7 +152,7 @@ impl Board {
                     halfmove_reset = true;
                 }
                 // If en passant, remove captured pawn
-                if mov.flags() >> 12 == 0b0001 {
+                if mov.flags() == 0b0001 {
                     self.black &= !(end_mask >> 8);
                 }
             } else {
@@ -133,7 +165,7 @@ impl Board {
                     halfmove_reset = true;
                 }
                 // If en passant, remove captured pawn
-                if mov.flags() >> 12 == 0b0001 {
+                if mov.flags() == 0b0001 {
                     self.white &= !(end_mask << 8);
                 }
             }
@@ -154,7 +186,7 @@ impl Board {
             if self.pawns & start_mask != 0 {
                 self.other &= 0b1111 << 6;
                 self.pawns &= !start_mask;
-                match mov.flags() >> 12 {
+                match mov.flags() {
                     0b0001 => { // En passant
                         self.pawns &= !(end_mask >> 8);
                         self.pawns |= end_mask;
@@ -197,38 +229,6 @@ impl Board {
         if !halfmove_reset {
             self.other += 1;
         }
-    }
-}
-
-/// Represents a move in the game.
-///
-/// From least significant bit:
-/// - 6 bits: starting square
-/// - 6 bits: ending square
-/// - 4 bits: flags
-///   - 0b0000: None
-///   - 0b0001: En passant
-///   - 0b0010: Castle
-///   - 0b0011: Double pawn push
-///   - 0b0100: Queen promotion
-///   - 0b0101: Rook promotion
-///   - 0b0110: Bishop promotion
-///   - 0b0111: Knight promotion
-struct Move {
-    data: u16,
-}
-
-impl Move {
-    pub fn starting_index(&self) -> u8 {
-        (self.data & 0x3F) as u8
-    }
-
-    pub fn ending_index(&self) -> u8 {
-        ((self.data >> 6) & 0x3F) as u8
-    }
-
-    pub fn flags(&self) -> u8 {
-        (self.data >> 12) as u8
     }
 }
 
@@ -366,6 +366,18 @@ mod tests {
             board.get_bitboard(false, PieceType::King),
             "black king",
         );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_too_many_in_rank() {
+        let board = Board::from_fen("9/8/8/8/8/8/8/8 w - - 0 1");
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_char() {
+        let board = Board::from_fen("8/w/8/8/8/8/8/8 w - - 0 1");
     }
 
     fn test_bitboard(expected: u64, actual: u64, name: &str) {
