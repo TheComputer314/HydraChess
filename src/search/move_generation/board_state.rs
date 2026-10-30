@@ -97,62 +97,101 @@ impl Board {
             }
     }
 
+    /// Makes a move on the board state.
+    ///
+    /// This function assumes that the move is legal.
+    ///
+    /// If the move is a castle, the moved piece must be a king. This function will handle moving the rook as well.
     pub fn make_move(mut self, mov: &Move) {
         let start_mask = 1 << mov.starting_index();
         let end_mask = 1 << mov.ending_index();
         let mut halfmove_reset = false;
 
         // Check piece color
-        if start_mask & self.white != 0 {
-            self.white &= !start_mask; // Remove from start square
-            self.white |= end_mask; // Add to end square
-            // If capture
-            if self.black & end_mask != 0 {
-                // Reset halfmove clock to 0
-                self.other &= 0b1111 << 6;
-                self.black &= !end_mask;
-                halfmove_reset = true;
-            }
-        } else {
-            self.black &= !start_mask;
-            self.black |= end_mask;
-            // If capture
-            if self.white & end_mask != 0 {
-                self.other &= 0b1111 << 4;
-                self.white &= !end_mask;
-                halfmove_reset = true;
+        {
+            if start_mask & self.white != 0 {
+                self.white &= !start_mask; // Remove from start square
+                self.white |= end_mask; // Add to end square
+                // If capture
+                if self.black & end_mask != 0 {
+                    // Reset halfmove clock to 0
+                    self.other &= 0b1111 << 6;
+                    self.black &= !end_mask;
+                    halfmove_reset = true;
+                }
+                // If en passant, remove captured pawn
+                if mov.flags() >> 12 == 0b0001 {
+                    self.black &= !(end_mask >> 8);
+                }
+            } else {
+                self.black &= !start_mask;
+                self.black |= end_mask;
+                // If capture
+                if self.white & end_mask != 0 {
+                    self.other &= 0b1111 << 4;
+                    self.white &= !end_mask;
+                    halfmove_reset = true;
+                }
+                // If en passant, remove captured pawn
+                if mov.flags() >> 12 == 0b0001 {
+                    self.white &= !(end_mask << 8);
+                }
             }
         }
 
         // Clear piece from end square for captures
-        self.pawns &= !end_mask;
-        self.knights &= !end_mask;
-        self.bishops &= !end_mask;
-        self.rooks &= !end_mask;
-        self.queens &= !end_mask;
-        self.kings &= !end_mask;
+        {
+            self.pawns &= !end_mask;
+            self.knights &= !end_mask;
+            self.bishops &= !end_mask;
+            self.rooks &= !end_mask;
+            self.queens &= !end_mask;
+            self.kings &= !end_mask;
+        }
 
         // Check piece type
-        if self.pawns & start_mask != 0 {
-            self.other &= 0b1111 << 6;
-            self.pawns &= !start_mask;
-            self.pawns |= end_mask;
-            halfmove_reset = true;
-        } else if self.knights & start_mask != 0 {
-            self.knights &= !start_mask;
-            self.knights |= end_mask;
-        } else if self.bishops & start_mask != 0 {
-            self.bishops &= !start_mask;
-            self.bishops |= end_mask;
-        } else if self.rooks & start_mask != 0 {
-            self.rooks &= !start_mask;
-            self.rooks |= end_mask;
-        } else if self.queens & start_mask != 0 {
-            self.queens &= !start_mask;
-            self.queens |= end_mask;
-        } else if self.kings & start_mask != 0 {
-            self.kings &= !start_mask;
-            self.kings |= end_mask;
+        {
+            if self.pawns & start_mask != 0 {
+                self.other &= 0b1111 << 6;
+                self.pawns &= !start_mask;
+                match mov.flags() >> 12 {
+                    0b0001 => { // En passant
+                        self.pawns &= !(end_mask >> 8);
+                        self.pawns |= end_mask;
+                    },
+                    0b0100 => { // Queen promotion
+                        self.queens |= end_mask;
+                    },
+                    0b0101 => { // Rook promotion
+                        self.rooks |= end_mask;
+                    },
+                    0b0110 => { // Bishop promotion
+                        self.bishops |= end_mask;
+                    },
+                    0b0111 => { // Knight promotion
+                        self.knights |= end_mask;
+                    },
+                    _ => {
+                        self.pawns |= end_mask;
+                    }
+                }
+                halfmove_reset = true;
+            } else if self.knights & start_mask != 0 {
+                self.knights &= !start_mask;
+                self.knights |= end_mask;
+            } else if self.bishops & start_mask != 0 {
+                self.bishops &= !start_mask;
+                self.bishops |= end_mask;
+            } else if self.rooks & start_mask != 0 {
+                self.rooks &= !start_mask;
+                self.rooks |= end_mask;
+            } else if self.queens & start_mask != 0 {
+                self.queens &= !start_mask;
+                self.queens |= end_mask;
+            } else if self.kings & start_mask != 0 {
+                self.kings &= !start_mask;
+                self.kings |= end_mask;
+            }
         }
 
         if !halfmove_reset {
@@ -202,35 +241,131 @@ mod tests {
         let board = Board::starting();
         test_bitboard(0x000000000000FFFF, board.white, "all white");
         test_bitboard(0xFFFF000000000000, board.black, "all black");
-        test_bitboard(0x000000000000FF00, board.get_bitboard(true, PieceType::Pawn), "white pawns");
-        test_bitboard(0x00FF000000000000, board.get_bitboard(false, PieceType::Pawn), "black pawns");
-        test_bitboard(0x0000000000000042, board.get_bitboard(true, PieceType::Knight), "white knights");
-        test_bitboard(0x4200000000000000, board.get_bitboard(false, PieceType::Knight), "black knights");
-        test_bitboard(0x0000000000000024, board.get_bitboard(true, PieceType::Bishop), "white bishops");
-        test_bitboard(0x2400000000000000, board.get_bitboard(false, PieceType::Bishop), "black bishops");
-        test_bitboard(0x0000000000000081, board.get_bitboard(true, PieceType::Rook), "white rooks");
-        test_bitboard(0x8100000000000000, board.get_bitboard(false, PieceType::Rook), "black rooks");
-        test_bitboard(0x0000000000000008, board.get_bitboard(true, PieceType::Queen), "white queen");
-        test_bitboard(0x0800000000000000, board.get_bitboard(false, PieceType::Queen), "black queen");
-        test_bitboard(0x0000000000000010, board.get_bitboard(true, PieceType::King), "white king");
-        test_bitboard(0x1000000000000000, board.get_bitboard(false, PieceType::King), "black king");
+        test_bitboard(
+            0x000000000000FF00,
+            board.get_bitboard(true, PieceType::Pawn),
+            "white pawns",
+        );
+        test_bitboard(
+            0x00FF000000000000,
+            board.get_bitboard(false, PieceType::Pawn),
+            "black pawns",
+        );
+        test_bitboard(
+            0x0000000000000042,
+            board.get_bitboard(true, PieceType::Knight),
+            "white knights",
+        );
+        test_bitboard(
+            0x4200000000000000,
+            board.get_bitboard(false, PieceType::Knight),
+            "black knights",
+        );
+        test_bitboard(
+            0x0000000000000024,
+            board.get_bitboard(true, PieceType::Bishop),
+            "white bishops",
+        );
+        test_bitboard(
+            0x2400000000000000,
+            board.get_bitboard(false, PieceType::Bishop),
+            "black bishops",
+        );
+        test_bitboard(
+            0x0000000000000081,
+            board.get_bitboard(true, PieceType::Rook),
+            "white rooks",
+        );
+        test_bitboard(
+            0x8100000000000000,
+            board.get_bitboard(false, PieceType::Rook),
+            "black rooks",
+        );
+        test_bitboard(
+            0x0000000000000008,
+            board.get_bitboard(true, PieceType::Queen),
+            "white queen",
+        );
+        test_bitboard(
+            0x0800000000000000,
+            board.get_bitboard(false, PieceType::Queen),
+            "black queen",
+        );
+        test_bitboard(
+            0x0000000000000010,
+            board.get_bitboard(true, PieceType::King),
+            "white king",
+        );
+        test_bitboard(
+            0x1000000000000000,
+            board.get_bitboard(false, PieceType::King),
+            "black king",
+        );
     }
 
     #[test]
     fn test_kiwipete() {
         let board = Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R");
-        test_bitboard(0x000000081000E700, board.get_bitboard(true, PieceType::Pawn), "white pawns");
-        test_bitboard(0x002D500002800000, board.get_bitboard(false, PieceType::Pawn), "black pawns");
-        test_bitboard(0x0000001000040000, board.get_bitboard(true, PieceType::Knight), "white knights");
-        test_bitboard(0x0000220000000000, board.get_bitboard(false, PieceType::Knight), "black knights");
-        test_bitboard(0x0000000000001800, board.get_bitboard(true, PieceType::Bishop), "white bishops");
-        test_bitboard(0x0040010000000000, board.get_bitboard(false, PieceType::Bishop), "black bishops");
-        test_bitboard(0x0000000000000081, board.get_bitboard(true, PieceType::Rook), "white rooks");
-        test_bitboard(0x8100000000000000, board.get_bitboard(false, PieceType::Rook), "black rooks");
-        test_bitboard(0x0000000000200000, board.get_bitboard(true, PieceType::Queen), "white queens");
-        test_bitboard(0x0010000000000000, board.get_bitboard(false, PieceType::Queen), "black queens");
-        test_bitboard(0x0000000000000010, board.get_bitboard(true, PieceType::King), "white king");
-        test_bitboard(0x1000000000000000, board.get_bitboard(false, PieceType::King), "black king");
+        test_bitboard(
+            0x000000081000E700,
+            board.get_bitboard(true, PieceType::Pawn),
+            "white pawns",
+        );
+        test_bitboard(
+            0x002D500002800000,
+            board.get_bitboard(false, PieceType::Pawn),
+            "black pawns",
+        );
+        test_bitboard(
+            0x0000001000040000,
+            board.get_bitboard(true, PieceType::Knight),
+            "white knights",
+        );
+        test_bitboard(
+            0x0000220000000000,
+            board.get_bitboard(false, PieceType::Knight),
+            "black knights",
+        );
+        test_bitboard(
+            0x0000000000001800,
+            board.get_bitboard(true, PieceType::Bishop),
+            "white bishops",
+        );
+        test_bitboard(
+            0x0040010000000000,
+            board.get_bitboard(false, PieceType::Bishop),
+            "black bishops",
+        );
+        test_bitboard(
+            0x0000000000000081,
+            board.get_bitboard(true, PieceType::Rook),
+            "white rooks",
+        );
+        test_bitboard(
+            0x8100000000000000,
+            board.get_bitboard(false, PieceType::Rook),
+            "black rooks",
+        );
+        test_bitboard(
+            0x0000000000200000,
+            board.get_bitboard(true, PieceType::Queen),
+            "white queens",
+        );
+        test_bitboard(
+            0x0010000000000000,
+            board.get_bitboard(false, PieceType::Queen),
+            "black queens",
+        );
+        test_bitboard(
+            0x0000000000000010,
+            board.get_bitboard(true, PieceType::King),
+            "white king",
+        );
+        test_bitboard(
+            0x1000000000000000,
+            board.get_bitboard(false, PieceType::King),
+            "black king",
+        );
     }
 
     fn test_bitboard(expected: u64, actual: u64, name: &str) {
