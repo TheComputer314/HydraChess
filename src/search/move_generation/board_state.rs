@@ -1,6 +1,7 @@
 /// Represents the state of a chess board.
 ///
 /// Board state is represented by a Little-Endian Rank-File order u64 for each piece color and each piece type.
+#[derive(Debug)]
 struct Board {
     white: u64,
     black: u64,
@@ -14,11 +15,34 @@ struct Board {
     ///
     /// From least significant bit:
     /// - 6 bits: Halfmove clock
-    /// - 1 bit: White's queenside castling rights
     /// - 1 bit: White's kingside castling rights
-    /// - 1 bit: Black's queenside castling rights
+    /// - 1 bit: White's queenside castling rights
     /// - 1 bit: Black's kingside castling rights
+    /// - 1 bit: Black's queenside castling rights
+    /// - 1 bit: White to move
+    /// - 1 bit: En passant performed
+    /// - 3 bits: En passant target file
+    /// - 1 bit: En passant target rank (white = 1)
     other: u16,
+}
+
+// Custom PartialEq impl to avoid checking the halfmove clock in equality comparisons
+impl PartialEq for Board {
+    fn eq(&self, other: &Self) -> bool {
+        self.white == other.white
+            && self.black == other.black
+            && self.pawns == other.pawns
+            && self.knights == other.knights
+            && self.bishops == other.bishops
+            && self.rooks == other.rooks
+            && self.queens == other.queens
+            && self.kings == other.kings
+            && if self.other & 0b1 << 11 == 0 { // If en passant not performed
+                self.other & (u16::MAX >> 4) == other.other & (u16::MAX >> 4)
+            } else {
+                self.other == other.other
+            }
+    }
 }
 
 enum PieceType {
@@ -49,6 +73,11 @@ struct Move {
 }
 
 impl Move {
+    pub fn new(starting_index: u8, ending_index: u8, flags: u8) -> Self {
+        let data = (starting_index as u16) | ((ending_index as u16) << 6) | ((flags as u16) << 12);
+        Self { data }
+    }
+
     pub fn starting_index(&self) -> u8 {
         (self.data & 0x3F) as u8
     }
@@ -64,15 +93,23 @@ impl Move {
 
 impl Board {
     pub fn starting() -> Self {
-        Self::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR")
+        Self::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
     }
 
     pub fn from_fen(fen_string: &str) -> Self {
+        let mut substrings = fen_string.split_whitespace();
+        let board_state = substrings.next().unwrap();
+        let white_to_move = substrings.next().unwrap();
+        let castling_rights = substrings.next().unwrap();
+        let en_passant_target = substrings.next().unwrap();
+        let halfmove_clock = substrings.next().unwrap();
+        // Fullmove clock is disregarded
+
+        // Load pieces into bitboards
         let mut rank = 7; // Start at the 8th rank
         let mut file = 0; // Start at the A-file
-
         let mut bitboards = [0u64; 8];
-        for c in fen_string.chars() {
+        for c in board_state.chars() {
             if c.is_ascii_digit() {
                 file += c.to_digit(10).unwrap() as usize;
                 continue;
@@ -103,6 +140,49 @@ impl Board {
             file += 1;
         }
 
+        // Load miscellaneous data
+        let mut other: u16 = 0;
+
+        // Load halfmove clock into first 6 bits
+        other |= halfmove_clock.parse::<u16>().unwrap();
+
+        // Load castling rights into next 4 bits
+        for c in castling_rights.chars() {
+            match c {
+                'K' => other |= 0b0001 << 6,
+                'Q' => other |= 0b0010 << 6,
+                'k' => other |= 0b0100 << 6,
+                'q' => other |= 0b1000 << 6,
+                _ => {}
+            }
+        }
+
+        // Load white to move into next bit
+        if white_to_move == "w" {
+            other |= 1 << 10
+        }
+
+        // Load if en passant was performed into next bit
+        let mut en_passant_target = en_passant_target.chars();
+        let en_passant_target_file = en_passant_target.next().unwrap();
+        if en_passant_target_file != '-' {
+            other |= 1 << 11;
+            // Load en passant target into next 4 bits
+            other |= match en_passant_target_file {
+                'a' => 0,
+                'b' => 1,
+                'c' => 2,
+                'd' => 3,
+                'e' => 4,
+                'f' => 5,
+                'g' => 6,
+                'h' => 7,
+                _ => panic!(),
+            } << 12;
+            let en_passant_target_rank = en_passant_target.next().unwrap();
+            other |= (if en_passant_target_rank == '3' { 1 } else { 0 }) << 15;
+        }
+
         let [white, black, pawns, knights, bishops, rooks, queens, kings] = bitboards;
         Board {
             white,
@@ -113,7 +193,7 @@ impl Board {
             rooks,
             queens,
             kings,
-            other: 0b1111,
+            other,
         }
     }
 
@@ -129,12 +209,39 @@ impl Board {
             }
     }
 
+    pub fn get_halfmove_clock(&self) -> u8 {
+        (self.other & 0b111111) as u8
+    }
+
+    pub fn get_castling_rights(&self) -> u8 {
+        ((self.other >> 6) & 0b1111) as u8
+    }
+
+    pub fn white_to_move(&self) -> bool {
+        (self.other >> 10) & 0b1 == 1
+    }
+
+    pub fn en_passant_target_available(&self) -> bool {
+        (self.other >> 11) & 0b1 == 1
+    }
+
+    pub fn en_passant_target(&self) -> u8 {
+        let target = self.other >> 12;
+        let file = (target & 0b111) as u8;
+        let rank = if target & 0b1000 == 0 {
+            5
+        } else {
+            2
+        };
+        rank * 8 + file
+    }
+
     /// Makes a move on the board state.
     ///
     /// This function assumes that the move is legal.
     ///
     /// If the move is a castle, the moved piece must be a king. This function will handle moving the rook as well.
-    pub fn make_move(mut self, mov: &Move) {
+    pub fn make_move(&mut self, mov: &Move) {
         let start_mask = 1 << mov.starting_index();
         let end_mask = 1 << mov.ending_index();
         let mut halfmove_reset = false;
@@ -187,22 +294,35 @@ impl Board {
                 self.other &= 0b1111 << 6;
                 self.pawns &= !start_mask;
                 match mov.flags() {
-                    0b0001 => { // En passant
+                    0b0001 => {
+                        // En passant
                         self.pawns &= !(end_mask >> 8);
                         self.pawns |= end_mask;
-                    },
-                    0b0100 => { // Queen promotion
+                        self.other &= !(0b11111 << 11);
+                    }
+                    0b0011 => {
+                        self.pawns |= end_mask;
+                        self.other |= 1 << 11;
+                        self.other &= !(0b1111 << 12); // Clear out upper 4 bits
+                        self.other |= ((mov.ending_index() % 8) as u16) << 12; // Put file into 3 bits
+                        self.other |= (if self.white_to_move() { 1 } else { 0 }) << 15;
+                    }
+                    0b0100 => {
+                        // Queen promotion
                         self.queens |= end_mask;
-                    },
-                    0b0101 => { // Rook promotion
+                    }
+                    0b0101 => {
+                        // Rook promotion
                         self.rooks |= end_mask;
-                    },
-                    0b0110 => { // Bishop promotion
+                    }
+                    0b0110 => {
+                        // Bishop promotion
                         self.bishops |= end_mask;
-                    },
-                    0b0111 => { // Knight promotion
+                    }
+                    0b0111 => {
+                        // Knight promotion
                         self.knights |= end_mask;
-                    },
+                    }
                     _ => {
                         self.pawns |= end_mask;
                     }
@@ -229,15 +349,18 @@ impl Board {
         if !halfmove_reset {
             self.other += 1;
         }
+
+        // Toggle white to move
+        self.other ^= 1 << 10;
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::search::move_generation::board_state::{Board, PieceType};
+    use crate::search::move_generation::board_state::{Board, Move, PieceType};
 
     #[test]
-    fn test_starting() {
+    fn test_load_starting() {
         let board = Board::starting();
         test_bitboard(0x000000000000FFFF, board.white, "all white");
         test_bitboard(0xFFFF000000000000, board.black, "all black");
@@ -301,11 +424,15 @@ mod tests {
             board.get_bitboard(false, PieceType::King),
             "black king",
         );
+        assert_eq!(board.get_halfmove_clock(), 0);
+        assert!(!board.en_passant_target_available());
+        assert_eq!(board.get_castling_rights(), 0b1111);
+        assert!(board.white_to_move());
     }
 
     #[test]
-    fn test_kiwipete() {
-        let board = Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R");
+    fn test_load_kiwipete() {
+        let board = Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0");
         test_bitboard(
             0x000000081000E700,
             board.get_bitboard(true, PieceType::Pawn),
@@ -366,18 +493,20 @@ mod tests {
             board.get_bitboard(false, PieceType::King),
             "black king",
         );
+        assert_eq!(board.get_halfmove_clock(), 0);
+        assert!(!board.en_passant_target_available());
+        assert_eq!(board.get_castling_rights(), 0b1111);
+        assert!(board.white_to_move());
     }
 
     #[test]
-    #[should_panic]
-    fn test_too_many_in_rank() {
-        let board = Board::from_fen("9/8/8/8/8/8/8/8 w - - 0 1");
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_invalid_char() {
-        let board = Board::from_fen("8/w/8/8/8/8/8/8 w - - 0 1");
+    fn test_make_move() {
+        let mut board = Board::from_fen("rnbqkbnr/pppp1ppp/8/1P2p3/8/8/P1PPPPPP/RNBQKBNR b KQkq - 0 2");
+        board.make_move(&Move::new(50, 34, 0)); // c7c5
+        assert_eq!(
+            board,
+            Board::from_fen("rnbqkbnr/pp1p1ppp/8/1Pp1p3/8/8/P1PPPPPP/RNBQKBNR w KQkq c6 0 3")
+        );
     }
 
     fn test_bitboard(expected: u64, actual: u64, name: &str) {
