@@ -454,6 +454,13 @@ mod tests {
         assert_eq!(board.en_passant_target().unwrap(), 42);
     }
 
+    #[test]
+    fn test_load_castling_rights() {
+        let board =
+            Board::from_fen("rnbqkbnr/pp1p1ppp/8/1Pp1p3/8/8/P1PPPPPP/RNBQKBNR w Kkq c6 0 3");
+        assert_eq!(board.get_castling_rights(), 0b1101);
+    }
+
     fn test_bitboard(expected: u64, actual: u64, name: &str) {
         let mut display: String = String::new();
         display.push_str("    Expected      |      Actual\n");
