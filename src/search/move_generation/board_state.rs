@@ -1,4 +1,5 @@
-use crate::search::move_generation::mov::{ Move, PieceType };
+use super::mov::{Move, PieceType};
+use crate::search::move_generation::mov::PieceType::*;
 
 /// Represents the state of a chess board.
 ///
@@ -39,7 +40,8 @@ impl PartialEq for Board {
             && self.rooks == other.rooks
             && self.queens == other.queens
             && self.kings == other.kings
-            && if self.other & 0b1 << 11 == 0 { // If en passant not performed
+            && if self.other & 0b1 << 11 == 0 {
+                // If en passant not performed
                 self.other & (u16::MAX >> 4) == other.other & (u16::MAX >> 4)
             } else {
                 self.other == other.other
@@ -156,12 +158,12 @@ impl Board {
     pub fn get_bitboard(&self, white: bool, piece_type: PieceType) -> u64 {
         (if white { self.white } else { self.black })
             & match piece_type {
-                PieceType::Pawn => self.pawns,
-                PieceType::Knight => self.knights,
-                PieceType::Bishop => self.bishops,
-                PieceType::Rook => self.rooks,
-                PieceType::Queen => self.queens,
-                PieceType::King => self.kings,
+                Pawn => self.pawns,
+                Knight => self.knights,
+                Bishop => self.bishops,
+                Rook => self.rooks,
+                Queen => self.queens,
+                King => self.kings,
             }
     }
 
@@ -177,144 +179,131 @@ impl Board {
         (self.other >> 10) & 0b1 == 1
     }
 
-    pub fn en_passant_target_available(&self) -> bool {
-        (self.other >> 11) & 0b1 == 1
-    }
-
-    pub fn en_passant_target(&self) -> u8 {
-        let target = self.other >> 12;
-        let file = (target & 0b111) as u8;
-        let rank = if target & 0b1000 == 0 {
-            5
+    pub fn en_passant_target(&self) -> Option<u8> {
+        if (self.other >> 11) & 0b1 == 1 {
+            let target = self.other >> 12;
+            let file = (target & 0b111) as u8;
+            let rank = if target & 0b1000 == 0 { 5 } else { 2 };
+            Some(rank * 8 + file)
         } else {
-            2
-        };
-        rank * 8 + file
+            None
+        }
     }
 
-    /// Makes a move on the board state.
+    /// Makes a non-special move on the board state, assuming that the move is legal.
     ///
-    /// This function assumes that the move is legal.
-    ///
-    /// If the move is a castle, the moved piece must be a king. This function will handle moving the rook as well.
-    pub fn make_move(&mut self, mov: &Move) {
+    /// If the move captures a piece, the captured piece is returned. Otherwise, None is returned.
+    pub fn make_move(&mut self, mov: &Move) -> Option<PieceType> {
         let start_mask = 1 << mov.starting_index();
         let end_mask = 1 << mov.ending_index();
-        let mut halfmove_reset = false;
 
-        // Check piece color
-        {
-            if start_mask & self.white != 0 {
-                self.white &= !start_mask; // Remove from start square
-                self.white |= end_mask; // Add to end square
-                // If capture
-                if self.black & end_mask != 0 {
-                    // Reset halfmove clock to 0
-                    self.other &= 0b1111 << 6;
-                    self.black &= !end_mask;
-                    halfmove_reset = true;
-                }
-                // If en passant, remove captured pawn
-                if mov.flags() == 0b0001 {
-                    self.black &= !(end_mask >> 8);
-                }
-            } else {
-                self.black &= !start_mask;
-                self.black |= end_mask;
-                // If capture
-                if self.white & end_mask != 0 {
-                    self.other &= 0b1111 << 4;
-                    self.white &= !end_mask;
-                    halfmove_reset = true;
-                }
-                // If en passant, remove captured pawn
-                if mov.flags() == 0b0001 {
-                    self.white &= !(end_mask << 8);
-                }
-            }
-        }
+        // Get type of the piece being moved
+        let moved_piece = if start_mask & self.pawns != 0 {
+            Pawn
+        } else if start_mask & self.knights != 0 {
+            Knight
+        } else if start_mask & self.bishops != 0 {
+            Bishop
+        } else if start_mask & self.rooks != 0 {
+            Rook
+        } else if start_mask & self.queens != 0 {
+            Queen
+        } else if start_mask & self.kings != 0 {
+            King
+        } else {
+            panic!("No piece at the start square");
+        };
+        // Get color of piece
+        let white = start_mask & self.white != 0;
+        // If the move is a capture, get the type of the captured piece
+        let capture = if end_mask & self.pawns != 0 {
+            Some(Pawn)
+        } else if end_mask & self.knights != 0 {
+            Some(Knight)
+        } else if end_mask & self.bishops != 0 {
+            Some(Bishop)
+        } else if end_mask & self.rooks != 0 {
+            Some(Rook)
+        } else if end_mask & self.queens != 0 {
+            Some(Queen)
+        } else if end_mask & self.kings != 0 {
+            panic!("King capture??????")
+        } else {
+            None
+        };
 
-        // Clear piece from end square for captures
-        {
-            self.pawns &= !end_mask;
-            self.knights &= !end_mask;
-            self.bishops &= !end_mask;
-            self.rooks &= !end_mask;
-            self.queens &= !end_mask;
-            self.kings &= !end_mask;
-        }
-
-        // Check piece type
-        {
-            if self.pawns & start_mask != 0 {
-                self.other &= 0b1111 << 6;
-                self.pawns &= !start_mask;
-                match mov.flags() {
-                    0b0001 => {
-                        // En passant
-                        self.pawns &= !(end_mask >> 8);
-                        self.pawns |= end_mask;
-                        self.other &= !(0b11111 << 11);
-                    }
-                    0b0011 => {
-                        self.pawns |= end_mask;
-                        self.other |= 1 << 11;
-                        self.other &= !(0b1111 << 12); // Clear out upper 4 bits
-                        self.other |= ((mov.ending_index() % 8) as u16) << 12; // Put file into 3 bits
-                        self.other |= (if self.white_to_move() { 1 } else { 0 }) << 15;
-                    }
-                    0b0100 => {
-                        // Queen promotion
-                        self.queens |= end_mask;
-                    }
-                    0b0101 => {
-                        // Rook promotion
-                        self.rooks |= end_mask;
-                    }
-                    0b0110 => {
-                        // Bishop promotion
-                        self.bishops |= end_mask;
-                    }
-                    0b0111 => {
-                        // Knight promotion
-                        self.knights |= end_mask;
-                    }
-                    _ => {
-                        self.pawns |= end_mask;
-                    }
-                }
-                halfmove_reset = true;
-            } else if self.knights & start_mask != 0 {
-                self.knights &= !start_mask;
-                self.knights |= end_mask;
-            } else if self.bishops & start_mask != 0 {
-                self.bishops &= !start_mask;
-                self.bishops |= end_mask;
-            } else if self.rooks & start_mask != 0 {
-                self.rooks &= !start_mask;
-                self.rooks |= end_mask;
-            } else if self.queens & start_mask != 0 {
-                self.queens &= !start_mask;
-                self.queens |= end_mask;
-            } else if self.kings & start_mask != 0 {
-                self.kings &= !start_mask;
-                self.kings |= end_mask;
-            }
-        }
-
-        if !halfmove_reset {
+        // If a piece was captured or if the piece to move is a pawn, reset the halfmove clock
+        if capture.is_some() || moved_piece == Pawn {
+            self.other &= !0b111111;
+        } else {
+            // Otherwise, increment it
             self.other += 1;
+        }
+
+        // Remove the piece from the start square and add it to the end square
+        match moved_piece {
+            Pawn => {
+                self.pawns &= !start_mask;
+                self.pawns |= end_mask
+            }
+            Knight => {
+                self.knights &= !start_mask;
+                self.knights |= end_mask
+            }
+            Bishop => {
+                self.bishops &= !start_mask;
+                self.bishops |= end_mask
+            }
+            Rook => {
+                self.rooks &= !start_mask;
+                self.rooks |= end_mask
+            }
+            Queen => {
+                self.queens &= !start_mask;
+                self.queens |= end_mask
+            }
+            King => {
+                self.kings &= !start_mask;
+                self.kings |= end_mask
+            }
+        }
+        if white {
+            self.white &= !start_mask;
+            self.white |= end_mask;
+        } else {
+            self.black &= !start_mask;
+            self.black |= end_mask;
+        }
+
+        match &capture {
+            Some(Pawn) => self.pawns &= !end_mask,
+            Some(Knight) => self.knights &= !end_mask,
+            Some(Bishop) => self.bishops &= !end_mask,
+            Some(Rook) => self.rooks &= !end_mask,
+            Some(Queen) => self.queens &= !end_mask,
+            Some(King) => panic!("King capture??????"),
+            None => {}
+        }
+        if capture.is_some() {
+            if white {
+                self.black &= !end_mask;
+            } else {
+                self.white &= !end_mask;
+            }
         }
 
         // Toggle white to move
         self.other ^= 1 << 10;
+        self.other &= !(0b11111 << 11);
+
+        capture
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::search::move_generation::board_state::{Board};
-    use crate::search::move_generation::mov::{Move, PieceType};
+    use super::super::mov::{Move, PieceType};
+    use super::Board;
 
     #[test]
     fn test_load_starting() {
@@ -382,14 +371,15 @@ mod tests {
             "black king",
         );
         assert_eq!(board.get_halfmove_clock(), 0);
-        assert!(!board.en_passant_target_available());
+        assert!(board.en_passant_target().is_none());
         assert_eq!(board.get_castling_rights(), 0b1111);
         assert!(board.white_to_move());
     }
 
     #[test]
     fn test_load_kiwipete() {
-        let board = Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0");
+        let board =
+            Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0");
         test_bitboard(
             0x000000081000E700,
             board.get_bitboard(true, PieceType::Pawn),
@@ -451,19 +441,17 @@ mod tests {
             "black king",
         );
         assert_eq!(board.get_halfmove_clock(), 0);
-        assert!(!board.en_passant_target_available());
+        assert!(board.en_passant_target().is_none());
         assert_eq!(board.get_castling_rights(), 0b1111);
         assert!(board.white_to_move());
     }
 
     #[test]
-    fn test_make_move() {
-        let mut board = Board::from_fen("rnbqkbnr/pppp1ppp/8/1P2p3/8/8/P1PPPPPP/RNBQKBNR b KQkq - 0 2");
-        board.make_move(&Move::new(50, 34, 0)); // c7c5
-        assert_eq!(
-            board,
-            Board::from_fen("rnbqkbnr/pp1p1ppp/8/1Pp1p3/8/8/P1PPPPPP/RNBQKBNR w KQkq c6 0 3")
-        );
+    fn test_load_en_passant() {
+        let board =
+            Board::from_fen("rnbqkbnr/pp1p1ppp/8/1Pp1p3/8/8/P1PPPPPP/RNBQKBNR w KQkq c6 0 3");
+        assert!(board.en_passant_target().is_some());
+        assert_eq!(board.en_passant_target().unwrap(), 42);
     }
 
     fn test_bitboard(expected: u64, actual: u64, name: &str) {

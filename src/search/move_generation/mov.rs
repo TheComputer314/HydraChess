@@ -35,6 +35,7 @@ impl Move {
     }
 }
 
+#[derive(PartialEq, Eq)]
 pub enum PieceType {
     Pawn,
     Knight,
