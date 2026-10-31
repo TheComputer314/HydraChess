@@ -26,7 +26,7 @@ struct Board {
     /// - 1 bit: En passant performed
     /// - 3 bits: En passant target file
     /// - 1 bit: En passant target rank (white = 1)
-    other: u16,
+    flags: u16,
 }
 
 // Custom PartialEq impl to avoid checking the halfmove clock in equality comparisons
@@ -40,11 +40,11 @@ impl PartialEq for Board {
             && self.rooks == other.rooks
             && self.queens == other.queens
             && self.kings == other.kings
-            && if self.other & 0b1 << 11 == 0 {
+            && if self.flags & 0b1 << 11 == 0 {
                 // If en passant not performed
-                self.other & (u16::MAX >> 4) == other.other & (u16::MAX >> 4)
+                self.flags & (u16::MAX >> 4) == other.flags & (u16::MAX >> 4)
             } else {
-                self.other == other.other
+                self.flags == other.flags
             }
     }
 }
@@ -151,7 +151,7 @@ impl Board {
             rooks,
             queens,
             kings,
-            other,
+            flags: other,
         }
     }
 
@@ -168,20 +168,20 @@ impl Board {
     }
 
     pub fn get_halfmove_clock(&self) -> u8 {
-        (self.other & 0b111111) as u8
+        (self.flags & 0b111111) as u8
     }
 
     pub fn get_castling_rights(&self) -> u8 {
-        ((self.other >> 6) & 0b1111) as u8
+        ((self.flags >> 6) & 0b1111) as u8
     }
 
     pub fn white_to_move(&self) -> bool {
-        (self.other >> 10) & 0b1 == 1
+        (self.flags >> 10) & 0b1 == 1
     }
 
     pub fn en_passant_target(&self) -> Option<u8> {
-        if (self.other >> 11) & 0b1 == 1 {
-            let target = self.other >> 12;
+        if (self.flags >> 11) & 0b1 == 1 {
+            let target = self.flags >> 12;
             let file = (target & 0b111) as u8;
             let rank = if target & 0b1000 == 0 { 5 } else { 2 };
             Some(rank * 8 + file)
@@ -234,10 +234,10 @@ impl Board {
 
         // If a piece was captured or if the piece to move is a pawn, reset the halfmove clock
         if capture.is_some() || moved_piece == Pawn {
-            self.other &= !0b111111;
+            self.flags &= !0b111111;
         } else {
             // Otherwise, increment it
-            self.other += 1;
+            self.flags += 1;
         }
 
         // Remove the piece from the start square and add it to the end square
@@ -293,8 +293,41 @@ impl Board {
         }
 
         // Toggle white to move
-        self.other ^= 1 << 10;
-        self.other &= !(0b11111 << 11);
+        self.flags ^= 1 << 10;
+        // Clear en passant flags
+        self.flags &= !(0b11111 << 11);
+
+        if white {
+            if self.flags & 1 << 6 != 0 // If white's kingside castling is available,
+                // and either the H file rook moved, or the king moved
+                && ((moved_piece == Rook && mov.starting_index() == 7) || moved_piece == King)
+            {
+                // Then clear the flag for white's kingside castling
+                self.flags &= !(1 << 6);
+            }
+            if self.flags & 1 << 7 != 0 // If white's queenside castling is available,
+                // and either the A file rook, the queen, or the king moved
+                && ((moved_piece == Rook && mov.starting_index() == 0) || moved_piece == Queen || moved_piece == King)
+            {
+                // Then clear the flag for white's queenside castling
+                self.flags &= !(1 << 7);
+            }
+        } else {
+            if self.flags & 1 << 8 != 0 // If black's kingside castling is available,
+                // and either the H file rook moved, or the king moved
+                && ((moved_piece == Rook && mov.starting_index() == 7) || moved_piece == King)
+            {
+                // Then clear the flag for white's kingside castling
+                self.flags &= !(1 << 8);
+            }
+            if self.flags & 1 << 9 != 0 // If black's queenside castling is available,
+                // and either the A file rook, the queen, or the king moved
+                && ((moved_piece == Rook && mov.starting_index() == 0) || moved_piece == Queen || moved_piece == King)
+            {
+                // Then clear the flag for white's queenside castling
+                self.flags &= !(1 << 9);
+            }
+        }
 
         capture
     }
@@ -466,11 +499,22 @@ mod tests {
         // Test making a move
         let mut board = Board::starting();
         board.make_move(&Move::new(8, 16, 0)); // a2a3
-        assert_eq!(board, Board::from_fen("rnbqkbnr/pppppppp/8/8/8/P7/1PPPPPPP/RNBQKBNR b KQkq - 0 1"));
+        assert_eq!(
+            board,
+            Board::from_fen("rnbqkbnr/pppppppp/8/8/8/P7/1PPPPPPP/RNBQKBNR b KQkq - 0 1")
+        );
         // Test capture
         let mut board = Board::from_fen("8/8/8/3r4/2KP4/8/2k5/8 w - - 0 1");
         board.make_move(&Move::new(26, 35, 0)); // c4d5
         assert_eq!(board, Board::from_fen("8/8/8/3K4/3P4/8/2k5/8 b - - 0 1"));
+        // Test increment halfmove clock & test castling rights
+        let mut board =
+            Board::from_fen("rnbqkbnr/1ppppppp/8/p7/P7/8/1PPPPPPP/RNBQKBNR w KQkq - 0 1");
+        board.make_move(&Move::new(0, 16, 0));
+        assert_eq!(
+            board,
+            Board::from_fen("rnbqkbnr/1ppppppp/8/p7/P7/R7/1PPPPPPP/1NBQKBNR b Kkq - 1 1")
+        );
     }
 
     fn test_bitboard(expected: u64, actual: u64, name: &str) {
