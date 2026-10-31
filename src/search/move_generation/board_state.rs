@@ -1,3 +1,5 @@
+use crate::search::move_generation::mov::{ Move, PieceType };
+
 /// Represents the state of a chess board.
 ///
 /// Board state is represented by a Little-Endian Rank-File order u64 for each piece color and each piece type.
@@ -42,52 +44,6 @@ impl PartialEq for Board {
             } else {
                 self.other == other.other
             }
-    }
-}
-
-enum PieceType {
-    Pawn,
-    Knight,
-    Bishop,
-    Rook,
-    Queen,
-    King,
-}
-
-/// Represents a move in the game.
-///
-/// From least significant bit:
-/// - 6 bits: starting square
-/// - 6 bits: ending square
-/// - 4 bits: flags
-///   - 0b0000: None
-///   - 0b0001: En passant
-///   - 0b0010: Castle
-///   - 0b0011: Double pawn push
-///   - 0b0100: Queen promotion
-///   - 0b0101: Rook promotion
-///   - 0b0110: Bishop promotion
-///   - 0b0111: Knight promotion
-struct Move {
-    data: u16,
-}
-
-impl Move {
-    pub fn new(starting_index: u8, ending_index: u8, flags: u8) -> Self {
-        let data = (starting_index as u16) | ((ending_index as u16) << 6) | ((flags as u16) << 12);
-        Self { data }
-    }
-
-    pub fn starting_index(&self) -> u8 {
-        (self.data & 0x3F) as u8
-    }
-
-    pub fn ending_index(&self) -> u8 {
-        ((self.data >> 6) & 0x3F) as u8
-    }
-
-    pub fn flags(&self) -> u8 {
-        (self.data >> 12) as u8
     }
 }
 
@@ -357,7 +313,8 @@ impl Board {
 
 #[cfg(test)]
 mod tests {
-    use crate::search::move_generation::board_state::{Board, Move, PieceType};
+    use crate::search::move_generation::board_state::{Board};
+    use crate::search::move_generation::mov::{Move, PieceType};
 
     #[test]
     fn test_load_starting() {
