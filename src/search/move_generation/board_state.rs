@@ -461,6 +461,18 @@ mod tests {
         assert_eq!(board.get_castling_rights(), 0b1101);
     }
 
+    #[test]
+    fn test_make_move() {
+        // Test making a move
+        let mut board = Board::starting();
+        board.make_move(&Move::new(8, 16, 0)); // a2a3
+        assert_eq!(board, Board::from_fen("rnbqkbnr/pppppppp/8/8/8/P7/1PPPPPPP/RNBQKBNR b KQkq - 0 1"));
+        // Test capture
+        let mut board = Board::from_fen("8/8/8/3r4/2KP4/8/2k5/8 w - - 0 1");
+        board.make_move(&Move::new(26, 35, 0)); // c4d5
+        assert_eq!(board, Board::from_fen("8/8/8/3K4/3P4/8/2k5/8 b - - 0 1"));
+    }
+
     fn test_bitboard(expected: u64, actual: u64, name: &str) {
         let mut display: String = String::new();
         display.push_str("    Expected      |      Actual\n");
