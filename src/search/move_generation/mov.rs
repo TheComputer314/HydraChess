@@ -21,6 +21,17 @@ impl Move {
         Self::new(starting_index, ending_index, 0)
     }
 
+    pub fn pawn_promotion(starting_index: u8, ending_index: u8, promotion: PieceType) -> Self {
+        let flags = match promotion {
+            PieceType::Queen => 0b0100,
+            PieceType::Rook => 0b0101,
+            PieceType::Bishop => 0b0110,
+            PieceType::Knight => 0b0111,
+            _ => panic!("Invalid promotion piece type"),
+        };
+        Self::new(starting_index, ending_index, flags)
+    }
+
     pub fn double_pawn_push(starting_index: u8) -> Self {
         if starting_index / 8 == 1 {
             Self::new(starting_index, starting_index + 16, 0b0011)

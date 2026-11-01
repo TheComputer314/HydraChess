@@ -264,7 +264,14 @@ impl Board {
         match moved_piece {
             Pawn => {
                 self.pawns &= !start_mask;
-                self.pawns |= end_mask
+                // Promotions
+                match mov.flags() {
+                    0b0100 => self.queens |= end_mask,
+                    0b0101 => self.rooks |= end_mask,
+                    0b0110 => self.bishops |= end_mask,
+                    0b0111 => self.knights |= end_mask,
+                    _ => self.pawns |= end_mask,
+                }
             }
             Knight => {
                 self.knights &= !start_mask;
@@ -344,7 +351,8 @@ impl Board {
 
         // Get type of the piece being moved
         // End mask since we're unmaking the move from end to start
-        let moved_piece = if end_mask & self.pawns != 0 {
+        let moved_piece = if mov.flags() != 0 || end_mask & self.pawns != 0 {
+            // If flags are set, it's a promotion, so the move must be a pawn
             Pawn
         } else if end_mask & self.knights != 0 {
             Knight
@@ -365,7 +373,14 @@ impl Board {
         match moved_piece {
             Pawn => {
                 self.pawns |= start_mask;
-                self.pawns &= !end_mask;
+                // Promotions
+                match mov.flags() {
+                    0b0100 => self.queens &= !end_mask,
+                    0b0101 => self.rooks &= !end_mask,
+                    0b0110 => self.bishops &= !end_mask,
+                    0b0111 => self.knights &= !end_mask,
+                    _ => self.pawns &= !end_mask
+                }
             }
             Knight => {
                 self.knights |= start_mask;
@@ -752,6 +767,17 @@ mod tests {
             Board::from_fen("rnbqkbnr/1ppppppp/8/p7/P7/R7/1PPPPPPP/1NBQKBNR b Kkq - 1 1")
         );
         // Test reset flags
+        board.unmake_move(&mov, flags, &capture);
+        assert_eq!(board, start_board);
+        // Test pawn promotion
+        let start_board = Board::from_fen("1b2k3/P7/8/8/8/8/8/4K3 w - - 0 1");
+        let mut board = start_board.clone();
+        let mov = Move::pawn_promotion(48, 57, PieceType::Queen);
+        let (flags, capture) = board.make_move(&mov);
+        assert_eq!(
+            board,
+            Board::from_fen("1Q2k3/8/8/8/8/8/8/4K3 b - - 0 1")
+        );
         board.unmake_move(&mov, flags, &capture);
         assert_eq!(board, start_board);
     }
