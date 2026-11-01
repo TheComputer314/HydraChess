@@ -4,7 +4,7 @@ use crate::search::move_generation::mov::PieceType::*;
 /// Represents the state of a chess board.
 ///
 /// Board state is represented by a Little-Endian Rank-File order u64 for each piece color and each piece type.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Board {
     white: u64,
     black: u64,
@@ -423,10 +423,6 @@ impl Board {
             mov.flags() == 0b0011,
             "Double pawn push must have flags 0b0011"
         );
-        debug_assert!(
-            mov.starting_index() == mov.ending_index() - 16,
-            "Double pawn push must push pawn by two ranks"
-        );
         let start_mask = mov.starting_mask();
         let end_mask = mov.ending_mask();
 
@@ -647,7 +643,8 @@ mod tests {
     #[test]
     fn test_make_unmake_move() {
         // Test making a move
-        let mut board = Board::starting();
+        let start_board = Board::starting();
+        let mut board = start_board.clone();
         let mov = Move::regular(8, 16); // a2a3
         let (flags, capture) = board.make_move(&mov);
         assert_eq!(
@@ -656,18 +653,19 @@ mod tests {
         );
         // Test unmaking a move
         board.unmake_move(&mov, flags, &capture);
-        assert_eq!(board, Board::starting());
+        assert_eq!(board, start_board);
         // Test capture
-        let mut board = Board::from_fen("8/8/8/3r4/2KP4/8/2k5/8 w - - 0 1");
+        let start_board = Board::from_fen("8/8/8/3r4/2KP4/8/2k5/8 w - - 0 1");
+        let mut board = start_board.clone();
         let mov = Move::regular(26, 35);
         let (flags, capture) = board.make_move(&mov); // c4d5
         assert_eq!(board, Board::from_fen("8/8/8/3K4/3P4/8/2k5/8 b - - 0 1"));
         // Test unmaking a capture
         board.unmake_move(&mov, flags, &capture);
-        assert_eq!(board, Board::from_fen("8/8/8/3r4/2KP4/8/2k5/8 w - - 0 1"));
+        assert_eq!(board, start_board);
         // Test increment halfmove clock & test castling rights
-        let mut board =
-            Board::from_fen("rnbqkbnr/1ppppppp/8/p7/P7/8/1PPPPPPP/RNBQKBNR w KQkq - 0 1");
+        let start_board = Board::from_fen("rnbqkbnr/1ppppppp/8/p7/P7/8/1PPPPPPP/RNBQKBNR w KQkq - 0 1");
+        let mut board = start_board.clone();
         let mov = Move::regular(0, 16);
         let (flags, capture) = board.make_move(&mov);
         assert_eq!(
@@ -676,20 +674,18 @@ mod tests {
         );
         // Test reset flags
         board.unmake_move(&mov, flags, &capture);
-        assert_eq!(
-            board,
-            Board::from_fen("rnbqkbnr/1ppppppp/8/p7/P7/8/1PPPPPPP/RNBQKBNR w KQkq - 0 1")
-        );
+        assert_eq!(board, start_board);
     }
 
     #[test]
     fn test_make_unmake_double_pawn_push() {
-        let mut board = Board::starting();
+        let start_board = Board::starting();
+        let mut board = start_board.clone();
         let mov = Move::double_pawn_push(8);
         let flags = board.make_double_pawn_push(&mov);
         assert_eq!(board, Board::from_fen("rnbqkbnr/pppppppp/8/8/P7/8/1PPPPPPP/RNBQKBNR b KQkq a3 0 1"));
         board.unmake_double_pawn_push(&mov, flags);
-        assert_eq!(board, Board::starting());
+        assert_eq!(board, start_board);
     }
 
     fn test_bitboard(expected: u64, actual: u64, name: &str) {
