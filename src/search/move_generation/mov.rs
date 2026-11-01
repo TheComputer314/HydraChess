@@ -56,6 +56,22 @@ impl Move {
         }
     }
 
+    pub fn kingside_castle(white: bool) -> Self {
+        if white {
+            Self::new(4, 6, 0b0010)
+        } else {
+            Self::new(60, 62, 0b0010)
+        }
+    }
+
+    pub fn queenside_castle(white: bool) -> Self {
+        if white {
+            Self::new(4, 2, 0b0010)
+        } else {
+            Self::new(60, 58, 0b0010)
+        }
+    }
+
     fn new(starting_index: u8, ending_index: u8, flags: u8) -> Self {
         let data = (starting_index as u16) | ((ending_index as u16) << 6) | ((flags as u16) << 12);
         Self { data }

@@ -314,28 +314,50 @@ impl Board {
             {
                 // Then clear the flag for white's kingside castling
                 self.flags &= !(1 << 6);
-            }
-            if self.flags & 1 << 7 != 0 // If white's queenside castling is available,
-                // and either the A file rook, the queen, or the king moved
-                && ((moved_piece == Rook && mov.starting_index() == 0) || moved_piece == Queen || moved_piece == King)
+            } else if self.flags & 1 << 7 != 0 // If white's queenside castling is available,
+                // and either the A file rook or the king moved
+                && ((moved_piece == Rook && mov.starting_index() == 0) || moved_piece == King)
             {
                 // Then clear the flag for white's queenside castling
                 self.flags &= !(1 << 7);
+            } else if self.flags & 1 << 8 != 0 // If black's kingside castling is available,
+                // and we're capturing the rook on H8
+            && mov.ending_index() == 63
+            {
+                // Then clear the flag for black's kingside castling
+                self.flags &= !(1 << 8);
+            } else if self.flags & 1 << 9 != 0 // If black's queenside castling is available,
+                // and we're capturing the rook on A8
+            && mov.ending_index() == 56
+            {
+                // Then clear the flag for black's queenside castling
+                self.flags &= !(1 << 9);
             }
         } else {
             if self.flags & 1 << 8 != 0 // If black's kingside castling is available,
                 // and either the H file rook moved, or the king moved
                 && ((moved_piece == Rook && mov.starting_index() == 7) || moved_piece == King)
             {
-                // Then clear the flag for white's kingside castling
+                // Then clear the flag for black's kingside castling
                 self.flags &= !(1 << 8);
-            }
-            if self.flags & 1 << 9 != 0 // If black's queenside castling is available,
-                // and either the A file rook, the queen, or the king moved
-                && ((moved_piece == Rook && mov.starting_index() == 0) || moved_piece == Queen || moved_piece == King)
+            } else if self.flags & 1 << 9 != 0 // If black's queenside castling is available,
+                // and we're capturing the rook on A8
+            && mov.ending_index() == 56
+            {
+                // Then clear the flag for black's queenside castling
+                self.flags &= !(1 << 9);
+            } else if self.flags & 1 << 6 != 0 // If white's kingside castling is available,
+            // and we're capturing the rook on H1,
+            && mov.ending_index() == 7
+            {
+                // Then clear the flag for white's kingside castling
+                self.flags &= !(1 << 6);
+            } else if self.flags & 1 << 7 != 0 // If white's queenside castling is available,
+            // and we're capturing the rook on A1,
+            && mov.ending_index() == 0
             {
                 // Then clear the flag for white's queenside castling
-                self.flags &= !(1 << 9);
+                self.flags &= !(1 << 7);
             }
         }
 
@@ -379,7 +401,7 @@ impl Board {
                     0b0101 => self.rooks &= !end_mask,
                     0b0110 => self.bishops &= !end_mask,
                     0b0111 => self.knights &= !end_mask,
-                    _ => self.pawns &= !end_mask
+                    _ => self.pawns &= !end_mask,
                 }
             }
             Knight => {
@@ -565,6 +587,104 @@ impl Board {
         self.pawns &= !end_mask;
 
         self.flags = last_flag;
+    }
+
+    /// Makes a castling move on the board state, assuming that the move is legal.
+    ///
+    /// Returns the state of the board's flags before the move.
+    pub fn make_castle(&mut self, mov: &Move) -> u16 {
+        let white = self.white & mov.starting_mask() != 0;
+        let kingside = mov.ending_index() % 8 == 6;
+
+        let king_start_mask = mov.starting_mask();
+        let king_end_mask = mov.ending_mask();
+        let rook_start_mask;
+        let rook_end_mask;
+        if white {
+            if kingside {
+                rook_start_mask = 1 << 7;
+                rook_end_mask = 1 << 5;
+            } else {
+                rook_start_mask = 1;
+                rook_end_mask = 1 << 3;
+            }
+        } else {
+            if kingside {
+                rook_start_mask = 1 << 63;
+                rook_end_mask = 1 << 61;
+            } else {
+                rook_start_mask = 1 << 56;
+                rook_end_mask = 1 << 59;
+            }
+        }
+
+        self.kings &= !king_start_mask;
+        self.kings |= king_end_mask;
+        self.rooks &= !rook_start_mask;
+        self.rooks |= rook_end_mask;
+        if white {
+            self.white &= !(king_start_mask | rook_start_mask);
+            self.white |= king_end_mask | rook_end_mask;
+        } else {
+            self.black &= !(king_start_mask | rook_start_mask);
+            self.black |= king_end_mask | rook_end_mask;
+        }
+
+        let flags = self.flags;
+
+        // Increment halfmove clock
+        self.flags += 1;
+        // Toggle white to move
+        self.flags ^= 1 << 10;
+
+        if white {
+            self.flags &= !((1 << 6) + (1 << 7));
+        } else {
+            self.flags &= !((1 << 8) + (1 << 9));
+        }
+
+        flags
+    }
+
+    pub fn unmake_castle(&mut self, mov: &Move, last_flags: u16) {
+        let white = self.white & mov.ending_mask() != 0;
+        let kingside = mov.ending_index() % 8 == 6;
+
+        let king_start_mask = mov.starting_mask();
+        let king_end_mask = mov.ending_mask();
+        let rook_start_mask;
+        let rook_end_mask;
+        if white {
+            if kingside {
+                rook_start_mask = 1 << 7;
+                rook_end_mask = 1 << 5;
+            } else {
+                rook_start_mask = 1;
+                rook_end_mask = 1 << 3;
+            }
+        } else {
+            if kingside {
+                rook_start_mask = 1 << 63;
+                rook_end_mask = 1 << 61;
+            } else {
+                rook_start_mask = 1 << 56;
+                rook_end_mask = 1 << 59;
+            }
+        }
+
+        self.kings |= king_start_mask;
+        self.kings &= !king_end_mask;
+        self.rooks |= rook_start_mask;
+        self.rooks &= !rook_end_mask;
+        if white {
+            self.white |= king_start_mask | rook_start_mask;
+            self.white &= !(king_end_mask | rook_end_mask);
+        } else {
+            self.black |= king_start_mask | rook_start_mask;
+            self.black &= !(king_end_mask | rook_end_mask);
+        }
+
+        self.flags = last_flags;
     }
 }
 
@@ -774,10 +894,7 @@ mod tests {
         let mut board = start_board.clone();
         let mov = Move::pawn_promotion(48, 57, PieceType::Queen);
         let (flags, capture) = board.make_move(&mov);
-        assert_eq!(
-            board,
-            Board::from_fen("1Q2k3/8/8/8/8/8/8/4K3 b - - 0 1")
-        );
+        assert_eq!(board, Board::from_fen("1Q2k3/8/8/8/8/8/8/4K3 b - - 0 1"));
         board.unmake_move(&mov, flags, &capture);
         assert_eq!(board, start_board);
     }
@@ -808,6 +925,54 @@ mod tests {
             Board::from_fen("rnbqkbnr/pp2pppp/2pP4/8/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 3")
         );
         board.unmake_en_passant(&mov, flags);
+        assert_eq!(board, start_board);
+    }
+
+    #[test]
+    fn test_make_unmake_castle() {
+        // Test make white kingside castle
+        let start_board = Board::from_fen("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1");
+        let mut board = start_board.clone();
+        let mov = Move::kingside_castle(true);
+        let flags = board.make_castle(&mov);
+        assert_eq!(
+            board,
+            Board::from_fen("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R4RK1 b kq - 1 1")
+        );
+        // Test unmake white kingside castle
+        board.unmake_castle(&mov, flags);
+        assert_eq!(board, start_board);
+        // Test make white queenside castle
+        let mov = Move::queenside_castle(true);
+        let flags = board.make_castle(&mov);
+        assert_eq!(
+            board,
+            Board::from_fen("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/2KR3R b kq - 1 1")
+        );
+        // Test unmake white queenside castle
+        board.unmake_castle(&mov, flags);
+        assert_eq!(board, start_board);
+        // Test make black kingside castle
+        let start_board = Board::from_fen("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R b KQkq - 0 1");
+        let mut board = start_board.clone();
+        let mov = Move::kingside_castle(false);
+        let flags = board.make_castle(&mov);
+        assert_eq!(
+            board,
+            Board::from_fen("r4rk1/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQ - 1 2")
+        );
+        // Test unmake black kingside castle
+        board.unmake_castle(&mov, flags);
+        assert_eq!(board, start_board);
+        // Test make black queenside castle
+        let mov = Move::queenside_castle(false);
+        let flags = board.make_castle(&mov);
+        assert_eq!(
+            board,
+            Board::from_fen("2kr3r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQ - 1 2")
+        );
+        // Test unmake black queenside castle
+        board.unmake_castle(&mov, flags);
         assert_eq!(board, start_board);
     }
 
