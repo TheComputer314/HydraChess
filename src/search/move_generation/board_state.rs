@@ -242,6 +242,24 @@ impl Board {
             self.flags += 1;
         }
 
+        // Remove the captured piece from the board
+        match &capture {
+            Some(Pawn) => self.pawns &= !end_mask,
+            Some(Knight) => self.knights &= !end_mask,
+            Some(Bishop) => self.bishops &= !end_mask,
+            Some(Rook) => self.rooks &= !end_mask,
+            Some(Queen) => self.queens &= !end_mask,
+            Some(King) => panic!("King capture??????"),
+            None => {}
+        }
+        if capture.is_some() {
+            if white {
+                self.black &= !end_mask;
+            } else {
+                self.white &= !end_mask;
+            }
+        }
+
         // Remove the piece from the start square and add it to the end square
         match moved_piece {
             Pawn => {
@@ -275,23 +293,6 @@ impl Board {
         } else {
             self.black &= !start_mask;
             self.black |= end_mask;
-        }
-
-        match &capture {
-            Some(Pawn) => self.pawns &= !end_mask,
-            Some(Knight) => self.knights &= !end_mask,
-            Some(Bishop) => self.bishops &= !end_mask,
-            Some(Rook) => self.rooks &= !end_mask,
-            Some(Queen) => self.queens &= !end_mask,
-            Some(King) => panic!("King capture??????"),
-            None => {}
-        }
-        if capture.is_some() {
-            if white {
-                self.black &= !end_mask;
-            } else {
-                self.white &= !end_mask;
-            }
         }
 
         // Toggle white to move
@@ -728,11 +729,11 @@ mod tests {
         board.unmake_move(&mov, flags, &capture);
         assert_eq!(board, start_board);
         // Test capture
-        let start_board = Board::from_fen("8/8/8/3r4/2KP4/8/2k5/8 w - - 0 1");
+        let start_board = Board::from_fen("rnbqkb1r/pppppppp/8/8/4n3/2N5/PPPPPPPP/R1BQKBNR w KQkq - 0 1");
         let mut board = start_board.clone();
-        let mov = Move::regular(26, 35);
+        let mov = Move::regular(18, 28);
         let (flags, capture) = board.make_move(&mov); // c4d5
-        assert_eq!(board, Board::from_fen("8/8/8/3K4/3P4/8/2k5/8 b - - 0 1"));
+        assert_eq!(board, Board::from_fen("rnbqkb1r/pppppppp/8/8/4N3/8/PPPPPPPP/R1BQKBNR b KQkq - 0 1"));
         // Test unmaking a capture
         board.unmake_move(&mov, flags, &capture);
         assert_eq!(board, start_board);
