@@ -331,6 +331,87 @@ impl Board {
 
         capture
     }
+
+    /// Unmakes a non-special move on the board state.
+    ///
+    /// Takes the last flag and the captured piece type as input.
+    pub fn unmake_move(&mut self, mov: &Move, last_flag: u16, capture: &Option<PieceType>) {
+        let start_mask = 1 << mov.starting_index();
+        let end_mask = 1 << mov.ending_index();
+
+        // Get type of the piece being moved
+        // End mask since we're unmaking the move from end to start
+        let moved_piece = if end_mask & self.pawns != 0 {
+            Pawn
+        } else if end_mask & self.knights != 0 {
+            Knight
+        } else if end_mask & self.bishops != 0 {
+            Bishop
+        } else if end_mask & self.rooks != 0 {
+            Rook
+        } else if end_mask & self.queens != 0 {
+            Queen
+        } else if end_mask & self.kings != 0 {
+            King
+        } else {
+            panic!("No piece at the end square");
+        };
+        // Get color of piece
+        let white = end_mask & self.white != 0;
+
+        match moved_piece {
+            Pawn => {
+                self.pawns |= start_mask;
+                self.pawns &= !end_mask;
+            }
+            Knight => {
+                self.knights |= start_mask;
+                self.knights &= !end_mask;
+            }
+            Bishop => {
+                self.bishops |= start_mask;
+                self.bishops &= !end_mask;
+            }
+            Rook => {
+                self.rooks |= start_mask;
+                self.rooks &= !end_mask;
+            }
+            Queen => {
+                self.queens |= start_mask;
+                self.queens &= !end_mask;
+            }
+            King => {
+                self.kings |= start_mask;
+                self.kings &= !end_mask;
+            }
+        }
+        if white {
+            self.white |= start_mask;
+            self.white &= !end_mask;
+        } else {
+            self.black |= start_mask;
+            self.black &= !end_mask;
+        }
+
+        match capture {
+            Some(Pawn) => self.pawns |= end_mask,
+            Some(Knight) => self.knights |= end_mask,
+            Some(Bishop) => self.bishops |= end_mask,
+            Some(Rook) => self.rooks |= end_mask,
+            Some(Queen) => self.queens |= end_mask,
+            Some(King) => panic!("King capture??????"),
+            None => {}
+        }
+        if capture.is_some() {
+            if white {
+                self.black |= end_mask;
+            } else {
+                self.white |= end_mask;
+            }
+        }
+
+        self.flags = last_flag;
+    }
 }
 
 #[cfg(test)]
@@ -495,26 +576,41 @@ mod tests {
     }
 
     #[test]
-    fn test_make_move() {
+    fn test_make_unmake_move() {
         // Test making a move
         let mut board = Board::starting();
-        board.make_move(&Move::new(8, 16, 0)); // a2a3
+        let mov = Move::new(8, 16, 0); // a2a3
+        let flags = board.flags;
+        let capture =board.make_move(&mov);
         assert_eq!(
             board,
             Board::from_fen("rnbqkbnr/pppppppp/8/8/8/P7/1PPPPPPP/RNBQKBNR b KQkq - 0 1")
         );
+        // Test unmaking a move
+        board.unmake_move(&mov, flags, &capture);
+        assert_eq!(board, Board::starting());
         // Test capture
         let mut board = Board::from_fen("8/8/8/3r4/2KP4/8/2k5/8 w - - 0 1");
-        board.make_move(&Move::new(26, 35, 0)); // c4d5
+        let mov = Move::new(26, 35, 0);
+        let flags = board.flags;
+        let capture =board.make_move(&mov); // c4d5
         assert_eq!(board, Board::from_fen("8/8/8/3K4/3P4/8/2k5/8 b - - 0 1"));
+        // Test unmaking a capture
+        board.unmake_move(&mov, flags, &capture);
+        assert_eq!(board, Board::from_fen("8/8/8/3r4/2KP4/8/2k5/8 w - - 0 1"));
         // Test increment halfmove clock & test castling rights
         let mut board =
             Board::from_fen("rnbqkbnr/1ppppppp/8/p7/P7/8/1PPPPPPP/RNBQKBNR w KQkq - 0 1");
-        board.make_move(&Move::new(0, 16, 0));
+        let mov = Move::new(0, 16, 0);
+        let flags = board.flags;
+        let capture = board.make_move(&mov);
         assert_eq!(
             board,
             Board::from_fen("rnbqkbnr/1ppppppp/8/p7/P7/R7/1PPPPPPP/1NBQKBNR b Kkq - 1 1")
         );
+        // Test reset flags
+        board.unmake_move(&mov, flags, &capture);
+        assert_eq!(board, Board::from_fen("rnbqkbnr/1ppppppp/8/p7/P7/8/1PPPPPPP/RNBQKBNR w KQkq - 0 1"));
     }
 
     fn test_bitboard(expected: u64, actual: u64, name: &str) {
