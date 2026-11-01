@@ -29,6 +29,22 @@ impl Move {
         }
     }
 
+    pub fn left_en_passant(starting_index: u8) -> Self {
+        if starting_index % 8 == 4 {
+            Self::new(starting_index, starting_index + 7, 0b0001)
+        } else {
+            Self::new(starting_index, starting_index - 9, 0b0001)
+        }
+    }
+
+    pub fn right_en_passant(starting_index: u8) -> Self {
+        if starting_index % 8 == 4 {
+            Self::new(starting_index, starting_index + 9, 0b0001)
+        } else {
+            Self::new(starting_index, starting_index - 7, 0b0001)
+        }
+    }
+
     fn new(starting_index: u8, ending_index: u8, flags: u8) -> Self {
         let data = (starting_index as u16) | ((ending_index as u16) << 6) | ((flags as u16) << 12);
         Self { data }

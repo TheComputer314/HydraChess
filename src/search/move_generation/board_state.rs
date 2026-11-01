@@ -459,6 +459,8 @@ impl Board {
     }
 
     /// Unmakes a double pawn push.
+    ///
+    /// Takes the last flag value before the move.
     pub fn unmake_double_pawn_push(&mut self, mov: &Move, last_flag: u16) {
         let start_mask = mov.starting_mask();
         let end_mask = mov.ending_mask();
@@ -473,6 +475,77 @@ impl Board {
         }
 
         self.pawns |= start_mask;
+        self.pawns &= !end_mask;
+
+        self.flags = last_flag;
+    }
+
+    /// Makes an en passant move on the board state, assuming that the move is legal.
+    ///
+    /// Returns the state of the board's flags before the move.
+    pub fn make_en_passant(&mut self, mov: &Move) -> u16 {
+        debug_assert!(mov.flags() == 0b0001, "En passant must have flag 0b0001");
+
+        let start_mask = mov.starting_mask();
+        let end_mask = mov.ending_mask();
+
+        let white = self.white & start_mask != 0;
+        let capture_mask = if white {
+            1 << (mov.ending_index() - 8)
+        } else {
+            1 << (mov.ending_index() + 8)
+        };
+
+        if white {
+            self.white &= !start_mask;
+            self.white |= end_mask;
+            self.black &= !capture_mask;
+        } else {
+            self.black &= !start_mask;
+            self.black |= end_mask;
+            self.white &= !capture_mask;
+        }
+
+        self.pawns &= !(start_mask | capture_mask);
+        self.pawns |= end_mask;
+
+        let flags = self.flags;
+
+        // Reset halfmove clock
+        self.flags &= !0b111111;
+        // Toggle white to move
+        self.flags ^= 1 << 10;
+        // Clear en passant flags
+        self.flags &= !(0b11111 << 11);
+
+        flags
+    }
+
+    /// Unmakes an en passant.
+    ///
+    /// Takes the last flag value before the move.
+    pub fn unmake_en_passant(&mut self, mov: &Move, last_flag: u16) {
+        let start_mask = mov.starting_mask();
+        let end_mask = mov.ending_mask();
+
+        let white = self.white & end_mask != 0;
+        let capture_mask = if white {
+            1 << (mov.ending_index() - 8)
+        } else {
+            1 << (mov.ending_index() + 8)
+        };
+
+        if white {
+            self.white |= start_mask;
+            self.white &= !end_mask;
+            self.black |= capture_mask;
+        } else {
+            self.black |= start_mask;
+            self.black &= !end_mask;
+            self.white |= capture_mask;
+        }
+
+        self.pawns |= start_mask | capture_mask;
         self.pawns &= !end_mask;
 
         self.flags = last_flag;
@@ -685,6 +758,17 @@ mod tests {
         let flags = board.make_double_pawn_push(&mov);
         assert_eq!(board, Board::from_fen("rnbqkbnr/pppppppp/8/8/P7/8/1PPPPPPP/RNBQKBNR b KQkq a3 0 1"));
         board.unmake_double_pawn_push(&mov, flags);
+        assert_eq!(board, start_board);
+    }
+
+    #[test]
+    fn test_make_unmake_en_passant() {
+        let start_board = Board::from_fen("rnbqkbnr/pp2pppp/2p5/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3");
+        let mut board = start_board.clone();
+        let mov = Move::left_en_passant(36);
+        let flags = board.make_en_passant(&mov);
+        assert_eq!(board, Board::from_fen("rnbqkbnr/pp2pppp/2pP4/8/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 3"));
+        board.unmake_en_passant(&mov, flags);
         assert_eq!(board, start_board);
     }
 
