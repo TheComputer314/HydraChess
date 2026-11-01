@@ -729,16 +729,21 @@ mod tests {
         board.unmake_move(&mov, flags, &capture);
         assert_eq!(board, start_board);
         // Test capture
-        let start_board = Board::from_fen("rnbqkb1r/pppppppp/8/8/4n3/2N5/PPPPPPPP/R1BQKBNR w KQkq - 0 1");
+        let start_board =
+            Board::from_fen("rnbqkb1r/pppppppp/8/8/4n3/2N5/PPPPPPPP/R1BQKBNR w KQkq - 0 1");
         let mut board = start_board.clone();
         let mov = Move::regular(18, 28);
         let (flags, capture) = board.make_move(&mov); // c4d5
-        assert_eq!(board, Board::from_fen("rnbqkb1r/pppppppp/8/8/4N3/8/PPPPPPPP/R1BQKBNR b KQkq - 0 1"));
+        assert_eq!(
+            board,
+            Board::from_fen("rnbqkb1r/pppppppp/8/8/4N3/8/PPPPPPPP/R1BQKBNR b KQkq - 0 1")
+        );
         // Test unmaking a capture
         board.unmake_move(&mov, flags, &capture);
         assert_eq!(board, start_board);
         // Test increment halfmove clock & test castling rights
-        let start_board = Board::from_fen("rnbqkbnr/1ppppppp/8/p7/P7/8/1PPPPPPP/RNBQKBNR w KQkq - 0 1");
+        let start_board =
+            Board::from_fen("rnbqkbnr/1ppppppp/8/p7/P7/8/1PPPPPPP/RNBQKBNR w KQkq - 0 1");
         let mut board = start_board.clone();
         let mov = Move::regular(0, 16);
         let (flags, capture) = board.make_move(&mov);
@@ -757,18 +762,25 @@ mod tests {
         let mut board = start_board.clone();
         let mov = Move::double_pawn_push(8);
         let flags = board.make_double_pawn_push(&mov);
-        assert_eq!(board, Board::from_fen("rnbqkbnr/pppppppp/8/8/P7/8/1PPPPPPP/RNBQKBNR b KQkq a3 0 1"));
+        assert_eq!(
+            board,
+            Board::from_fen("rnbqkbnr/pppppppp/8/8/P7/8/1PPPPPPP/RNBQKBNR b KQkq a3 0 1")
+        );
         board.unmake_double_pawn_push(&mov, flags);
         assert_eq!(board, start_board);
     }
 
     #[test]
     fn test_make_unmake_en_passant() {
-        let start_board = Board::from_fen("rnbqkbnr/pp2pppp/2p5/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3");
+        let start_board =
+            Board::from_fen("rnbqkbnr/pp2pppp/2p5/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3");
         let mut board = start_board.clone();
         let mov = Move::left_en_passant(36);
         let flags = board.make_en_passant(&mov);
-        assert_eq!(board, Board::from_fen("rnbqkbnr/pp2pppp/2pP4/8/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 3"));
+        assert_eq!(
+            board,
+            Board::from_fen("rnbqkbnr/pp2pppp/2pP4/8/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 3")
+        );
         board.unmake_en_passant(&mov, flags);
         assert_eq!(board, start_board);
     }
