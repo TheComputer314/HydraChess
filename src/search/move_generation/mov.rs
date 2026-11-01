@@ -26,8 +26,16 @@ impl Move {
         (self.data & 0x3F) as u8
     }
 
+    pub fn starting_mask(&self) -> u64 {
+        1 << self.starting_index()
+    }
+
     pub fn ending_index(&self) -> u8 {
         ((self.data >> 6) & 0x3F) as u8
+    }
+
+    pub fn ending_mask(&self) -> u64 {
+        1 << self.ending_index()
     }
 
     pub fn flags(&self) -> u8 {

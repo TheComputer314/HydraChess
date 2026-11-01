@@ -192,10 +192,12 @@ impl Board {
 
     /// Makes a non-special move on the board state, assuming that the move is legal.
     ///
+    /// Returns the state of the board's flags before the move was made.
     /// If the move captures a piece, the captured piece is returned. Otherwise, None is returned.
-    pub fn make_move(&mut self, mov: &Move) -> Option<PieceType> {
-        let start_mask = 1 << mov.starting_index();
-        let end_mask = 1 << mov.ending_index();
+    pub fn make_move(&mut self, mov: &Move) -> (u16, Option<PieceType>) {
+        let last_flags = self.flags;
+        let start_mask = mov.starting_mask();
+        let end_mask = mov.ending_mask();
 
         // Get type of the piece being moved
         let moved_piece = if start_mask & self.pawns != 0 {
@@ -329,15 +331,15 @@ impl Board {
             }
         }
 
-        capture
+        (last_flags, capture)
     }
 
     /// Unmakes a non-special move on the board state.
     ///
     /// Takes the last flag and the captured piece type as input.
     pub fn unmake_move(&mut self, mov: &Move, last_flag: u16, capture: &Option<PieceType>) {
-        let start_mask = 1 << mov.starting_index();
-        let end_mask = 1 << mov.ending_index();
+        let start_mask = mov.starting_mask();
+        let end_mask = mov.ending_mask();
 
         // Get type of the piece being moved
         // End mask since we're unmaking the move from end to start
@@ -580,8 +582,7 @@ mod tests {
         // Test making a move
         let mut board = Board::starting();
         let mov = Move::new(8, 16, 0); // a2a3
-        let flags = board.flags;
-        let capture =board.make_move(&mov);
+        let (flags, capture) = board.make_move(&mov);
         assert_eq!(
             board,
             Board::from_fen("rnbqkbnr/pppppppp/8/8/8/P7/1PPPPPPP/RNBQKBNR b KQkq - 0 1")
@@ -592,8 +593,7 @@ mod tests {
         // Test capture
         let mut board = Board::from_fen("8/8/8/3r4/2KP4/8/2k5/8 w - - 0 1");
         let mov = Move::new(26, 35, 0);
-        let flags = board.flags;
-        let capture =board.make_move(&mov); // c4d5
+        let (flags, capture) = board.make_move(&mov); // c4d5
         assert_eq!(board, Board::from_fen("8/8/8/3K4/3P4/8/2k5/8 b - - 0 1"));
         // Test unmaking a capture
         board.unmake_move(&mov, flags, &capture);
@@ -602,15 +602,17 @@ mod tests {
         let mut board =
             Board::from_fen("rnbqkbnr/1ppppppp/8/p7/P7/8/1PPPPPPP/RNBQKBNR w KQkq - 0 1");
         let mov = Move::new(0, 16, 0);
-        let flags = board.flags;
-        let capture = board.make_move(&mov);
+        let (flags, capture) = board.make_move(&mov);
         assert_eq!(
             board,
             Board::from_fen("rnbqkbnr/1ppppppp/8/p7/P7/R7/1PPPPPPP/1NBQKBNR b Kkq - 1 1")
         );
         // Test reset flags
         board.unmake_move(&mov, flags, &capture);
-        assert_eq!(board, Board::from_fen("rnbqkbnr/1ppppppp/8/p7/P7/8/1PPPPPPP/RNBQKBNR w KQkq - 0 1"));
+        assert_eq!(
+            board,
+            Board::from_fen("rnbqkbnr/1ppppppp/8/p7/P7/8/1PPPPPPP/RNBQKBNR w KQkq - 0 1")
+        );
     }
 
     fn test_bitboard(expected: u64, actual: u64, name: &str) {
