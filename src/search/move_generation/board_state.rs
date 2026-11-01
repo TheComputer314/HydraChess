@@ -414,6 +414,73 @@ impl Board {
 
         self.flags = last_flag;
     }
+
+    /// Makes a double pawn push on the board state, assuming that the move is legal.
+    ///
+    /// Returns the state of the board's flags before the move.
+    pub fn make_double_pawn_push(&mut self, mov: &Move) -> u16 {
+        debug_assert!(
+            mov.flags() == 0b0011,
+            "Double pawn push must have flags 0b0011"
+        );
+        debug_assert!(
+            mov.starting_index() == mov.ending_index() - 16,
+            "Double pawn push must push pawn by two ranks"
+        );
+        let start_mask = mov.starting_mask();
+        let end_mask = mov.ending_mask();
+
+        let white = self.white & start_mask != 0;
+        if white {
+            self.white &= !start_mask;
+            self.white |= end_mask;
+        } else {
+            self.black &= !start_mask;
+            self.black |= end_mask;
+        }
+
+        self.pawns &= !start_mask;
+        self.pawns |= end_mask;
+
+        // Double pawn pushes can't capture, so capture handling is not necessary
+
+        let last_flag = self.flags;
+
+        // Reset halfmove clock
+        self.flags &= !0b111111;
+        // Toggle white to move
+        self.flags ^= 1 << 10;
+        // Clear en passant flags
+        self.flags &= !(0b11111 << 11);
+        // Flag en passant
+        self.flags |= 1 << 11;
+        // Flag file
+        self.flags |= ((mov.starting_index() % 8) as u16) << 12;
+        // Flag rank
+        self.flags |= if white { 1 << 15 } else { 0 };
+
+        last_flag
+    }
+
+    /// Unmakes a double pawn push.
+    pub fn unmake_double_pawn_push(&mut self, mov: &Move, last_flag: u16) {
+        let start_mask = mov.starting_mask();
+        let end_mask = mov.ending_mask();
+
+        let white = self.white & end_mask != 0;
+        if white {
+            self.white |= start_mask;
+            self.white &= !end_mask;
+        } else {
+            self.black |= start_mask;
+            self.black &= !end_mask;
+        }
+
+        self.pawns |= start_mask;
+        self.pawns &= !end_mask;
+
+        self.flags = last_flag;
+    }
 }
 
 #[cfg(test)]
@@ -581,7 +648,7 @@ mod tests {
     fn test_make_unmake_move() {
         // Test making a move
         let mut board = Board::starting();
-        let mov = Move::new(8, 16, 0); // a2a3
+        let mov = Move::regular(8, 16); // a2a3
         let (flags, capture) = board.make_move(&mov);
         assert_eq!(
             board,
@@ -592,7 +659,7 @@ mod tests {
         assert_eq!(board, Board::starting());
         // Test capture
         let mut board = Board::from_fen("8/8/8/3r4/2KP4/8/2k5/8 w - - 0 1");
-        let mov = Move::new(26, 35, 0);
+        let mov = Move::regular(26, 35);
         let (flags, capture) = board.make_move(&mov); // c4d5
         assert_eq!(board, Board::from_fen("8/8/8/3K4/3P4/8/2k5/8 b - - 0 1"));
         // Test unmaking a capture
@@ -601,7 +668,7 @@ mod tests {
         // Test increment halfmove clock & test castling rights
         let mut board =
             Board::from_fen("rnbqkbnr/1ppppppp/8/p7/P7/8/1PPPPPPP/RNBQKBNR w KQkq - 0 1");
-        let mov = Move::new(0, 16, 0);
+        let mov = Move::regular(0, 16);
         let (flags, capture) = board.make_move(&mov);
         assert_eq!(
             board,
@@ -613,6 +680,16 @@ mod tests {
             board,
             Board::from_fen("rnbqkbnr/1ppppppp/8/p7/P7/8/1PPPPPPP/RNBQKBNR w KQkq - 0 1")
         );
+    }
+
+    #[test]
+    fn test_make_unmake_double_pawn_push() {
+        let mut board = Board::starting();
+        let mov = Move::double_pawn_push(8);
+        let flags = board.make_double_pawn_push(&mov);
+        assert_eq!(board, Board::from_fen("rnbqkbnr/pppppppp/8/8/P7/8/1PPPPPPP/RNBQKBNR b KQkq a3 0 1"));
+        board.unmake_double_pawn_push(&mov, flags);
+        assert_eq!(board, Board::starting());
     }
 
     fn test_bitboard(expected: u64, actual: u64, name: &str) {

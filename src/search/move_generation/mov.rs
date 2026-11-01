@@ -17,7 +17,19 @@ pub struct Move {
 }
 
 impl Move {
-    pub fn new(starting_index: u8, ending_index: u8, flags: u8) -> Self {
+    pub fn regular(starting_index: u8, ending_index: u8) -> Self {
+        Self::new(starting_index, ending_index, 0)
+    }
+
+    pub fn double_pawn_push(starting_index: u8) -> Self {
+        if starting_index / 8 == 1 {
+            Self::new(starting_index, starting_index + 16, 0b0011)
+        } else {
+            Self::new(starting_index, starting_index - 16, 0b0011)
+        }
+    }
+
+    fn new(starting_index: u8, ending_index: u8, flags: u8) -> Self {
         let data = (starting_index as u16) | ((ending_index as u16) << 6) | ((flags as u16) << 12);
         Self { data }
     }
