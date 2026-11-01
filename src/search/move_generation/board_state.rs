@@ -1,5 +1,6 @@
+use super::mov::PieceType::*;
+use super::mov::squares::*;
 use super::mov::{Move, PieceType};
-use crate::search::move_generation::mov::PieceType::*;
 
 /// Represents the state of a chess board.
 ///
@@ -310,25 +311,28 @@ impl Board {
         if white {
             if self.flags & 1 << 6 != 0 // If white's kingside castling is available,
                 // and either the H file rook moved, or the king moved
-                && ((moved_piece == Rook && mov.starting_index() == 7) || moved_piece == King)
+                && ((moved_piece == Rook && mov.starting_index() == H1.index) || moved_piece == King)
             {
                 // Then clear the flag for white's kingside castling
                 self.flags &= !(1 << 6);
-            } else if self.flags & 1 << 7 != 0 // If white's queenside castling is available,
+            }
+            if self.flags & 1 << 7 != 0 // If white's queenside castling is available,
                 // and either the A file rook or the king moved
-                && ((moved_piece == Rook && mov.starting_index() == 0) || moved_piece == King)
+                && ((moved_piece == Rook && mov.starting_index() == A1.index) || moved_piece == King)
             {
                 // Then clear the flag for white's queenside castling
                 self.flags &= !(1 << 7);
-            } else if self.flags & 1 << 8 != 0 // If black's kingside castling is available,
+            }
+            if self.flags & 1 << 8 != 0 // If black's kingside castling is available, 
                 // and we're capturing the rook on H8
-            && mov.ending_index() == 63
+            && mov.ending_index() == H8.index
             {
                 // Then clear the flag for black's kingside castling
                 self.flags &= !(1 << 8);
-            } else if self.flags & 1 << 9 != 0 // If black's queenside castling is available,
+            }
+            if self.flags & 1 << 9 != 0 // If black's queenside castling is available,
                 // and we're capturing the rook on A8
-            && mov.ending_index() == 56
+            && mov.ending_index() == A8.index
             {
                 // Then clear the flag for black's queenside castling
                 self.flags &= !(1 << 9);
@@ -336,25 +340,28 @@ impl Board {
         } else {
             if self.flags & 1 << 8 != 0 // If black's kingside castling is available,
                 // and either the H file rook moved, or the king moved
-                && ((moved_piece == Rook && mov.starting_index() == 7) || moved_piece == King)
+                && ((moved_piece == Rook && mov.starting_index() == H8.index) || moved_piece == King)
             {
                 // Then clear the flag for black's kingside castling
                 self.flags &= !(1 << 8);
-            } else if self.flags & 1 << 9 != 0 // If black's queenside castling is available,
-                // and we're capturing the rook on A8
-            && mov.ending_index() == 56
+            }
+            if self.flags & 1 << 9 != 0 // If black's queenside castling is available,
+                // and either the A file rook moved, or the king moved
+            && mov.ending_index() == A8.index
             {
                 // Then clear the flag for black's queenside castling
                 self.flags &= !(1 << 9);
-            } else if self.flags & 1 << 6 != 0 // If white's kingside castling is available,
+            }
+            if self.flags & 1 << 6 != 0 // If white's kingside castling is available,
             // and we're capturing the rook on H1,
-            && mov.ending_index() == 7
+            && mov.ending_index() == H1.index
             {
                 // Then clear the flag for white's kingside castling
                 self.flags &= !(1 << 6);
-            } else if self.flags & 1 << 7 != 0 // If white's queenside castling is available,
+            }
+            if self.flags & 1 << 7 != 0 // If white's queenside castling is available,
             // and we're capturing the rook on A1,
-            && mov.ending_index() == 0
+            && mov.ending_index() == A1.index
             {
                 // Then clear the flag for white's queenside castling
                 self.flags &= !(1 << 7);
@@ -602,19 +609,19 @@ impl Board {
         let rook_end_mask;
         if white {
             if kingside {
-                rook_start_mask = 1 << 7;
-                rook_end_mask = 1 << 5;
+                rook_start_mask = H1.mask();
+                rook_end_mask = F1.mask();
             } else {
-                rook_start_mask = 1;
-                rook_end_mask = 1 << 3;
+                rook_start_mask = A1.mask();
+                rook_end_mask = D1.mask();
             }
         } else {
             if kingside {
-                rook_start_mask = 1 << 63;
-                rook_end_mask = 1 << 61;
+                rook_start_mask = H8.mask();
+                rook_end_mask = F8.mask();
             } else {
-                rook_start_mask = 1 << 56;
-                rook_end_mask = 1 << 59;
+                rook_start_mask = A8.mask();
+                rook_end_mask = D8.mask();
             }
         }
 
@@ -656,19 +663,19 @@ impl Board {
         let rook_end_mask;
         if white {
             if kingside {
-                rook_start_mask = 1 << 7;
-                rook_end_mask = 1 << 5;
+                rook_start_mask = H1.mask();
+                rook_end_mask = F1.mask();
             } else {
-                rook_start_mask = 1;
-                rook_end_mask = 1 << 3;
+                rook_start_mask = A1.mask();
+                rook_end_mask = D1.mask();
             }
         } else {
             if kingside {
-                rook_start_mask = 1 << 63;
-                rook_end_mask = 1 << 61;
+                rook_start_mask = H8.mask();
+                rook_end_mask = F8.mask();
             } else {
-                rook_start_mask = 1 << 56;
-                rook_end_mask = 1 << 59;
+                rook_start_mask = A8.mask();
+                rook_end_mask = D8.mask();
             }
         }
 
@@ -849,6 +856,36 @@ mod tests {
         assert_eq!(board.get_castling_rights(), 0b1101);
     }
 
+    fn test_bitboard(expected: u64, actual: u64, name: &str) {
+        let mut display: String = String::new();
+        display.push_str("    Expected      |      Actual\n");
+        for rank in (0..8).rev() {
+            for file in 0..8 {
+                let mask: u64 = 1 << (rank * 8 + file);
+                if expected & mask == 0 {
+                    display.push_str("0 ");
+                } else {
+                    display.push_str("1 ");
+                }
+            }
+            display.push_str("  |  ");
+            for file in 0..8 {
+                let mask: u64 = 1 << (rank * 8 + file);
+                if actual & mask == 0 {
+                    display.push_str("0 ");
+                } else {
+                    display.push_str("1 ");
+                }
+            }
+            display.push('\n');
+        }
+        assert_eq!(
+            expected, actual,
+            "Bitboard for {} did not match: \n{}",
+            name, display
+        );
+    }
+
     #[test]
     fn test_make_unmake_move() {
         // Test making a move
@@ -974,35 +1011,5 @@ mod tests {
         // Test unmake black queenside castle
         board.unmake_castle(&mov, flags);
         assert_eq!(board, start_board);
-    }
-
-    fn test_bitboard(expected: u64, actual: u64, name: &str) {
-        let mut display: String = String::new();
-        display.push_str("    Expected      |      Actual\n");
-        for rank in (0..8).rev() {
-            for file in 0..8 {
-                let mask: u64 = 1 << (rank * 8 + file);
-                if expected & mask == 0 {
-                    display.push_str("0 ");
-                } else {
-                    display.push_str("1 ");
-                }
-            }
-            display.push_str("  |  ");
-            for file in 0..8 {
-                let mask: u64 = 1 << (rank * 8 + file);
-                if actual & mask == 0 {
-                    display.push_str("0 ");
-                } else {
-                    display.push_str("1 ");
-                }
-            }
-            display.push('\n');
-        }
-        assert_eq!(
-            expected, actual,
-            "Bitboard for {} did not match: \n{}",
-            name, display
-        );
     }
 }
