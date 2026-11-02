@@ -187,25 +187,25 @@ impl MoveLookup {
         mask
     }
 
-    pub fn possible_rook_moves(&self, square: &Square, blocker_pieces: u64) -> u64 {
+    pub fn possible_rook_moves(&self, square: Square, blocker_pieces: u64) -> u64 {
         let mask;
         unsafe {
-            mask = self.rook_moves[square.index as usize]
-                [_pext_u64(blocker_pieces, Self::rook_occupancy_mask(square.index)) as usize];
+            mask = self.rook_moves[square.index() as usize]
+                [_pext_u64(blocker_pieces, Self::rook_occupancy_mask(square.index())) as usize];
         }
         mask
     }
 
-    pub fn possible_bishop_moves(&self, square: &Square, blocker_pieces: u64) -> u64 {
+    pub fn possible_bishop_moves(&self, square: Square, blocker_pieces: u64) -> u64 {
         let mask;
         unsafe {
-            mask = self.bishop_moves[square.index as usize]
-                [_pext_u64(blocker_pieces, Self::bishop_occupancy_mask(square.index)) as usize];
+            mask = self.bishop_moves[square.index() as usize]
+                [_pext_u64(blocker_pieces, Self::bishop_occupancy_mask(square.index())) as usize];
         }
         mask
     }
 
-    pub fn possible_queen_moves(&self, square: &Square, blocker_pieces: u64) -> u64 {
+    pub fn possible_queen_moves(&self, square: Square, blocker_pieces: u64) -> u64 {
         self.possible_bishop_moves(square, blocker_pieces) | self.possible_rook_moves(square, blocker_pieces)
     }
 
@@ -213,7 +213,7 @@ impl MoveLookup {
 
 #[cfg(test)]
 mod tests {
-    use crate::search::move_generation::mov::squares::C3;
+    use crate::search::move_generation::mov::Square::C3;
     use crate::search::move_generation::move_lookup::MoveLookup;
     use std::time::Instant;
 
@@ -239,11 +239,11 @@ mod tests {
     #[test]
     fn test_lookup() {
         let lookup = MoveLookup::new();
-        assert_eq!(lookup.possible_rook_moves(&C3, 0), 289360691368494084);
-        assert_eq!(lookup.possible_rook_moves(&C3, 17867064999936), 289360691353814020);
-        assert_eq!(lookup.possible_rook_moves(&C3, 17867069194240), 289360691353814020);
-        assert_eq!(lookup.possible_bishop_moves(&C3, 0), 9241421692918565393);
-        assert_eq!(lookup.possible_bishop_moves(&C3, 134217728), 4462742033);
-        assert_eq!(lookup.possible_bishop_moves(&C3, 35184506306560), 4462742033);
+        assert_eq!(lookup.possible_rook_moves(C3, 0), 289360691368494084);
+        assert_eq!(lookup.possible_rook_moves(C3, 17867064999936), 289360691353814020);
+        assert_eq!(lookup.possible_rook_moves(C3, 17867069194240), 289360691353814020);
+        assert_eq!(lookup.possible_bishop_moves(C3, 0), 9241421692918565393);
+        assert_eq!(lookup.possible_bishop_moves(C3, 134217728), 4462742033);
+        assert_eq!(lookup.possible_bishop_moves(C3, 35184506306560), 4462742033);
     }
 }

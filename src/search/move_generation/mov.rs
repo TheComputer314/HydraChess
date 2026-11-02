@@ -1,3 +1,5 @@
+use strum_macros::FromRepr;
+
 /// Represents a move in the game.
 ///
 /// From least significant bit:
@@ -113,99 +115,130 @@ pub enum PieceType {
     King,
 }
 
-#[derive(PartialEq, Eq)]
-pub struct Square {
-    pub index: u8,
+#[repr(u8)]
+#[derive(Copy, Clone, PartialEq, FromRepr)]
+// Shut clippy up about unused
+#[allow(unused)]
+pub enum Square {
+    A1 = 0,
+    B1 = 1,
+    C1 = 2,
+    D1 = 3,
+    E1 = 4,
+    F1 = 5,
+    G1 = 6,
+    H1 = 7,
+
+    A2 = 8,
+    B2 = 9,
+    C2 = 10,
+    D2 = 11,
+    E2 = 12,
+    F2 = 13,
+    G2 = 14,
+    H2 = 15,
+
+    A3 = 16,
+    B3 = 17,
+    C3 = 18,
+    D3 = 19,
+    E3 = 20,
+    F3 = 21,
+    G3 = 22,
+    H3 = 23,
+
+    A4 = 24,
+    B4 = 25,
+    C4 = 26,
+    D4 = 27,
+    E4 = 28,
+    F4 = 29,
+    G4 = 30,
+    H4 = 31,
+
+    A5 = 32,
+    B5 = 33,
+    C5 = 34,
+    D5 = 35,
+    E5 = 36,
+    F5 = 37,
+    G5 = 38,
+    H5 = 39,
+
+    A6 = 40,
+    B6 = 41,
+    C6 = 42,
+    D6 = 43,
+    E6 = 44,
+    F6 = 45,
+    G6 = 46,
+    H6 = 47,
+
+    A7 = 48,
+    B7 = 49,
+    C7 = 50,
+    D7 = 51,
+    E7 = 52,
+    F7 = 53,
+    G7 = 54,
+    H7 = 55,
+
+    A8 = 56,
+    B8 = 57,
+    C8 = 58,
+    D8 = 59,
+    E8 = 60,
+    F8 = 61,
+    G8 = 62,
+    H8 = 63,
 }
 
 impl Square {
+    pub fn index(&self) -> u8 {
+        *self as u8
+    }
+
     pub fn mask(&self) -> u64 {
-        1 << self.index
+        1 << self.index()
     }
 
     pub fn rank(&self) -> u8 {
-        self.index / 8
+        self.index() / 8
     }
 
     pub fn file(&self) -> u8 {
-        self.index % 8
+        self.index() % 8
     }
-}
 
-// Shut clippy up about unused
-#[allow(unused)]
-pub mod squares {
-    use crate::search::move_generation::mov::Square;
+    pub fn north(&self, squares: u8) -> Square {
+        Square::from_repr(self.index() + 8*squares).unwrap()
+    }
 
-    pub const A1: Square = Square { index: 0 };
-    pub const B1: Square = Square { index: 1 };
-    pub const C1: Square = Square { index: 2 };
-    pub const D1: Square = Square { index: 3 };
-    pub const E1: Square = Square { index: 4 };
-    pub const F1: Square = Square { index: 5 };
-    pub const G1: Square = Square { index: 6 };
-    pub const H1: Square = Square { index: 7 };
+    pub fn northeast(&self, squares: u8) -> Square {
+        Square::from_repr(self.index() + 9*squares).unwrap()
+    }
 
-    pub const A2: Square = Square { index: 8 };
-    pub const B2: Square = Square { index: 9 };
-    pub const C2: Square = Square { index: 10 };
-    pub const D2: Square = Square { index: 11 };
-    pub const E2: Square = Square { index: 12 };
-    pub const F2: Square = Square { index: 13 };
-    pub const G2: Square = Square { index: 14 };
-    pub const H2: Square = Square { index: 15 };
+    pub fn east(&self, squares: u8) -> Square {
+        Square::from_repr(self.index() + squares).unwrap()
+    }
 
-    pub const A3: Square = Square { index: 16 };
-    pub const B3: Square = Square { index: 17 };
-    pub const C3: Square = Square { index: 18 };
-    pub const D3: Square = Square { index: 19 };
-    pub const E3: Square = Square { index: 20 };
-    pub const F3: Square = Square { index: 21 };
-    pub const G3: Square = Square { index: 22 };
-    pub const H3: Square = Square { index: 23 };
+    pub fn southeast(&self, squares: u8) -> Square {
+        Square::from_repr(self.index() - 7*squares).unwrap()
+    }
 
-    pub const A4: Square = Square { index: 24 };
-    pub const B4: Square = Square { index: 25 };
-    pub const C4: Square = Square { index: 26 };
-    pub const D4: Square = Square { index: 27 };
-    pub const E4: Square = Square { index: 28 };
-    pub const F4: Square = Square { index: 29 };
-    pub const G4: Square = Square { index: 30 };
-    pub const H4: Square = Square { index: 31 };
+    pub fn south(&self, squares: u8) -> Square {
+        Square::from_repr(self.index() - 8*squares).unwrap()
+    }
 
-    pub const A5: Square = Square { index: 32 };
-    pub const B5: Square = Square { index: 33 };
-    pub const C5: Square = Square { index: 34 };
-    pub const D5: Square = Square { index: 35 };
-    pub const E5: Square = Square { index: 36 };
-    pub const F5: Square = Square { index: 37 };
-    pub const G5: Square = Square { index: 38 };
-    pub const H5: Square = Square { index: 39 };
+    pub fn southwest(&self, squares: u8) -> Square {
+        Square::from_repr(self.index() - 9*squares).unwrap()
+    }
 
-    pub const A6: Square = Square { index: 40 };
-    pub const B6: Square = Square { index: 41 };
-    pub const C6: Square = Square { index: 42 };
-    pub const D6: Square = Square { index: 43 };
-    pub const E6: Square = Square { index: 44 };
-    pub const F6: Square = Square { index: 45 };
-    pub const G6: Square = Square { index: 46 };
-    pub const H6: Square = Square { index: 47 };
+    pub fn west(&self, squares: u8) -> Square {
+        Square::from_repr(self.index() - squares).unwrap()
+    }
 
-    pub const A7: Square = Square { index: 48 };
-    pub const B7: Square = Square { index: 49 };
-    pub const C7: Square = Square { index: 50 };
-    pub const D7: Square = Square { index: 51 };
-    pub const E7: Square = Square { index: 52 };
-    pub const F7: Square = Square { index: 53 };
-    pub const G7: Square = Square { index: 54 };
-    pub const H7: Square = Square { index: 55 };
-
-    pub const A8: Square = Square { index: 56 };
-    pub const B8: Square = Square { index: 57 };
-    pub const C8: Square = Square { index: 58 };
-    pub const D8: Square = Square { index: 59 };
-    pub const E8: Square = Square { index: 60 };
-    pub const F8: Square = Square { index: 61 };
-    pub const G8: Square = Square { index: 62 };
-    pub const H8: Square = Square { index: 63 };
+    pub fn northwest(&self, squares: u8) -> Square {
+        Square::from_repr(self.index() + 7*squares).unwrap()
+    }
 }

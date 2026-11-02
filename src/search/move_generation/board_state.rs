@@ -1,5 +1,5 @@
+use crate::search::move_generation::mov::Square::*;
 use super::mov::PieceType::*;
-use super::mov::squares::*;
 use super::mov::{Move, PieceType};
 
 /// Represents the state of a chess board.
@@ -311,28 +311,28 @@ impl Board {
         if white {
             if self.flags & 1 << 6 != 0 // If white's kingside castling is available,
                 // and either the H file rook moved, or the king moved
-                && ((moved_piece == Rook && mov.starting_index() == H1.index) || moved_piece == King)
+                && ((moved_piece == Rook && mov.starting_index() == H1.index()) || moved_piece == King)
             {
                 // Then clear the flag for white's kingside castling
                 self.flags &= !(1 << 6);
             }
             if self.flags & 1 << 7 != 0 // If white's queenside castling is available,
                 // and either the A file rook or the king moved
-                && ((moved_piece == Rook && mov.starting_index() == A1.index) || moved_piece == King)
+                && ((moved_piece == Rook && mov.starting_index() == A1.index()) || moved_piece == King)
             {
                 // Then clear the flag for white's queenside castling
                 self.flags &= !(1 << 7);
             }
             if self.flags & 1 << 8 != 0 // If black's kingside castling is available, 
                 // and we're capturing the rook on H8
-            && mov.ending_index() == H8.index
+            && mov.ending_index() == H8.index()
             {
                 // Then clear the flag for black's kingside castling
                 self.flags &= !(1 << 8);
             }
             if self.flags & 1 << 9 != 0 // If black's queenside castling is available,
                 // and we're capturing the rook on A8
-            && mov.ending_index() == A8.index
+            && mov.ending_index() == A8.index()
             {
                 // Then clear the flag for black's queenside castling
                 self.flags &= !(1 << 9);
@@ -340,28 +340,28 @@ impl Board {
         } else {
             if self.flags & 1 << 8 != 0 // If black's kingside castling is available,
                 // and either the H file rook moved, or the king moved
-                && ((moved_piece == Rook && mov.starting_index() == H8.index) || moved_piece == King)
+                && ((moved_piece == Rook && mov.starting_index() == H8.index()) || moved_piece == King)
             {
                 // Then clear the flag for black's kingside castling
                 self.flags &= !(1 << 8);
             }
             if self.flags & 1 << 9 != 0 // If black's queenside castling is available,
                 // and either the A file rook moved, or the king moved
-            && mov.ending_index() == A8.index
+            && mov.ending_index() == A8.index()
             {
                 // Then clear the flag for black's queenside castling
                 self.flags &= !(1 << 9);
             }
             if self.flags & 1 << 6 != 0 // If white's kingside castling is available,
             // and we're capturing the rook on H1,
-            && mov.ending_index() == H1.index
+            && mov.ending_index() == H1.index()
             {
                 // Then clear the flag for white's kingside castling
                 self.flags &= !(1 << 6);
             }
             if self.flags & 1 << 7 != 0 // If white's queenside castling is available,
             // and we're capturing the rook on A1,
-            && mov.ending_index() == A1.index
+            && mov.ending_index() == A1.index()
             {
                 // Then clear the flag for white's queenside castling
                 self.flags &= !(1 << 7);
