@@ -141,7 +141,11 @@ impl MoveLookup {
                 break;
             }
             northeast_square += 9;
-            mask |= 1 << northeast_square;
+            let northeast_mask = 1 << northeast_square;
+            mask |= northeast_mask;
+            if northeast_mask & attack_mask != 0 {
+                break;
+            }
         }
         let mut northwest_square = square;
         loop {
@@ -149,7 +153,11 @@ impl MoveLookup {
                 break;
             }
             northwest_square += 7;
-            mask |= 1 << northwest_square;
+            let northwest_mask = 1 << northwest_square;
+            mask |= northwest_mask;
+            if northwest_mask & attack_mask != 0 {
+                break;
+            }
         }
         let mut southeast_square = square;
         loop {
@@ -157,7 +165,11 @@ impl MoveLookup {
                 break;
             }
             southeast_square -= 7;
-            mask |= 1 << southeast_square;
+            let southeast_mask = 1 << southeast_square;
+            mask |= southeast_mask;
+            if southeast_mask & attack_mask != 0 {
+                break;
+            }
         }
         let mut southwest_square = square;
         loop {
@@ -165,13 +177,17 @@ impl MoveLookup {
                 break;
             }
             southwest_square -= 9;
-            mask |= 1 << southwest_square;
+            let southwest_mask = 1 << southwest_square;
+            mask |= southwest_mask;
+            if southwest_mask & attack_mask != 0 {
+                break;
+            }
         }
 
         mask
     }
 
-    pub fn possible_rook_moves(&self, blocker_pieces: u64, square: Square) -> u64 {
+    pub fn possible_rook_moves(&self, square: Square, blocker_pieces: u64) -> u64 {
         let mask;
         unsafe {
             mask = self.rook_moves[square.index as usize]
@@ -180,7 +196,7 @@ impl MoveLookup {
         mask
     }
 
-    pub fn possible_bishop_moves(&self, enemy_pieces: u64, square: Square) -> u64 {
+    pub fn possible_bishop_moves(&self, square: Square, enemy_pieces: u64) -> u64 {
         let mask;
         unsafe {
             mask = self.bishop_moves[square.index as usize]
@@ -192,6 +208,7 @@ impl MoveLookup {
 
 #[cfg(test)]
 mod tests {
+    use crate::search::move_generation::mov::squares::C3;
     use crate::search::move_generation::move_lookup::MoveLookup;
     use std::time::Instant;
 
@@ -212,5 +229,16 @@ mod tests {
         assert_eq!(MoveLookup::rook_move_mask(0, 0), 0x1010101010101fe);
         assert_eq!(MoveLookup::rook_move_mask(0, 4), 0x101010101010106);
         assert_eq!(MoveLookup::rook_move_mask(27, 0), 0x8080808f7080808);
+    }
+
+    #[test]
+    fn test_lookup() {
+        let lookup = MoveLookup::new();
+        assert_eq!(lookup.possible_rook_moves(C3, 0), 289360691368494084);
+        assert_eq!(lookup.possible_rook_moves(C3, 17867064999936), 289360691353814020);
+        assert_eq!(lookup.possible_rook_moves(C3, 17867069194240), 289360691353814020);
+        assert_eq!(lookup.possible_bishop_moves(C3, 0), 9241421692918565393);
+        assert_eq!(lookup.possible_bishop_moves(C3, 134217728), 4462742033);
+        assert_eq!(lookup.possible_bishop_moves(C3, 35184506306560), 4462742033);
     }
 }
