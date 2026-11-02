@@ -1,3 +1,6 @@
+[build]
+rustflags = ["-C", "target_cpu=native"]
+
 [package]
 name = "HydraChess"
 version = "0.1.0"

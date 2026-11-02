@@ -12,6 +12,7 @@
 ///   - 0b0101: Rook promotion
 ///   - 0b0110: Bishop promotion
 ///   - 0b0111: Knight promotion
+#[derive(Clone, Copy)]
 pub struct Move {
     data: u16,
 }
@@ -75,6 +76,10 @@ impl Move {
     fn new(starting_index: u8, ending_index: u8, flags: u8) -> Self {
         let data = (starting_index as u16) | ((ending_index as u16) << 6) | ((flags as u16) << 12);
         Self { data }
+    }
+
+    pub fn null() -> Self {
+        Self { data: 0 }
     }
 
     pub fn starting_index(&self) -> u8 {
