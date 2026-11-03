@@ -1,4 +1,5 @@
 use strum_macros::FromRepr;
+use crate::search::move_generation::mov::Square::{C1, C8, E1, E8, G1, G8};
 
 /// Represents a move in the game.
 ///
@@ -20,11 +21,11 @@ pub struct Move {
 }
 
 impl Move {
-    pub fn regular(starting_index: u8, ending_index: u8) -> Self {
+    pub fn regular(starting_index: Square, ending_index: Square) -> Self {
         Self::new(starting_index, ending_index, 0)
     }
 
-    pub fn pawn_promotion(starting_index: u8, ending_index: u8, promotion: PieceType) -> Self {
+    pub fn pawn_promotion(starting_index: Square, ending_index: Square, promotion: PieceType) -> Self {
         let flags = match promotion {
             PieceType::Queen => 0b0100,
             PieceType::Rook => 0b0101,
@@ -35,47 +36,47 @@ impl Move {
         Self::new(starting_index, ending_index, flags)
     }
 
-    pub fn double_pawn_push(starting_index: u8) -> Self {
-        if starting_index / 8 == 1 {
-            Self::new(starting_index, starting_index + 16, 0b0011)
+    pub fn double_pawn_push(starting_index: Square) -> Self {
+        if starting_index.rank() == 1 {
+            Self::new(starting_index, starting_index.north(2), 0b0011)
         } else {
-            Self::new(starting_index, starting_index - 16, 0b0011)
+            Self::new(starting_index, starting_index.south(2), 0b0011)
         }
     }
 
-    pub fn left_en_passant(starting_index: u8) -> Self {
-        if starting_index % 8 == 4 {
-            Self::new(starting_index, starting_index + 7, 0b0001)
+    pub fn left_en_passant(starting_index: Square) -> Self {
+        if starting_index.rank() == 4 {
+            Self::new(starting_index, starting_index.northwest(1), 0b0001)
         } else {
-            Self::new(starting_index, starting_index - 9, 0b0001)
+            Self::new(starting_index, starting_index.southwest(1), 0b0001)
         }
     }
 
-    pub fn right_en_passant(starting_index: u8) -> Self {
-        if starting_index % 8 == 4 {
-            Self::new(starting_index, starting_index + 9, 0b0001)
+    pub fn right_en_passant(starting_index: Square) -> Self {
+        if starting_index.rank() == 4 {
+            Self::new(starting_index, starting_index.northeast(1), 0b0001)
         } else {
-            Self::new(starting_index, starting_index - 7, 0b0001)
+            Self::new(starting_index, starting_index.southeast(1), 0b0001)
         }
     }
 
     pub fn kingside_castle(white: bool) -> Self {
         if white {
-            Self::new(4, 6, 0b0010)
+            Self::new(E1, G1, 0b0010)
         } else {
-            Self::new(60, 62, 0b0010)
+            Self::new(E8, G8, 0b0010)
         }
     }
 
     pub fn queenside_castle(white: bool) -> Self {
         if white {
-            Self::new(4, 2, 0b0010)
+            Self::new(E1, C1, 0b0010)
         } else {
-            Self::new(60, 58, 0b0010)
+            Self::new(E8, C8, 0b0010)
         }
     }
 
-    fn new(starting_index: u8, ending_index: u8, flags: u8) -> Self {
+    fn new(starting_index: Square, ending_index: Square, flags: u8) -> Self {
         let data = (starting_index as u16) | ((ending_index as u16) << 6) | ((flags as u16) << 12);
         Self { data }
     }
@@ -240,5 +241,9 @@ impl Square {
 
     pub fn northwest(&self, squares: u8) -> Square {
         Square::from_repr(self.index() + 7*squares).unwrap()
+    }
+
+    pub fn from_index(index: u8) -> Square {
+        Square::from_repr(index).unwrap()
     }
 }

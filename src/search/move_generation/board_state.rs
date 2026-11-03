@@ -1,6 +1,6 @@
-use crate::search::move_generation::mov::Square::*;
 use super::mov::PieceType::*;
 use super::mov::{Move, PieceType};
+use crate::search::move_generation::mov::Square::*;
 
 /// Represents the state of a chess board.
 ///
@@ -699,6 +699,7 @@ impl Board {
 mod tests {
     use super::super::mov::{Move, PieceType};
     use super::Board;
+    use crate::search::move_generation::mov::Square::{A1, A2, A3, A7, B8, C3, E4, E5};
 
     #[test]
     fn test_load_starting() {
@@ -891,7 +892,7 @@ mod tests {
         // Test making a move
         let start_board = Board::starting();
         let mut board = start_board.clone();
-        let mov = Move::regular(8, 16); // a2a3
+        let mov = Move::regular(A2, A3);
         let (flags, capture) = board.make_move(&mov);
         assert_eq!(
             board,
@@ -904,8 +905,8 @@ mod tests {
         let start_board =
             Board::from_fen("rnbqkb1r/pppppppp/8/8/4n3/2N5/PPPPPPPP/R1BQKBNR w KQkq - 0 1");
         let mut board = start_board.clone();
-        let mov = Move::regular(18, 28);
-        let (flags, capture) = board.make_move(&mov); // c4d5
+        let mov = Move::regular(C3,E4);
+        let (flags, capture) = board.make_move(&mov);
         assert_eq!(
             board,
             Board::from_fen("rnbqkb1r/pppppppp/8/8/4N3/8/PPPPPPPP/R1BQKBNR b KQkq - 0 1")
@@ -917,7 +918,7 @@ mod tests {
         let start_board =
             Board::from_fen("rnbqkbnr/1ppppppp/8/p7/P7/8/1PPPPPPP/RNBQKBNR w KQkq - 0 1");
         let mut board = start_board.clone();
-        let mov = Move::regular(0, 16);
+        let mov = Move::regular(A1, A3);
         let (flags, capture) = board.make_move(&mov);
         assert_eq!(
             board,
@@ -929,7 +930,7 @@ mod tests {
         // Test pawn promotion
         let start_board = Board::from_fen("1b2k3/P7/8/8/8/8/8/4K3 w - - 0 1");
         let mut board = start_board.clone();
-        let mov = Move::pawn_promotion(48, 57, PieceType::Queen);
+        let mov = Move::pawn_promotion(A7, B8, PieceType::Queen);
         let (flags, capture) = board.make_move(&mov);
         assert_eq!(board, Board::from_fen("1Q2k3/8/8/8/8/8/8/4K3 b - - 0 1"));
         board.unmake_move(&mov, flags, &capture);
@@ -940,7 +941,7 @@ mod tests {
     fn test_make_unmake_double_pawn_push() {
         let start_board = Board::starting();
         let mut board = start_board.clone();
-        let mov = Move::double_pawn_push(8);
+        let mov = Move::double_pawn_push(A2);
         let flags = board.make_double_pawn_push(&mov);
         assert_eq!(
             board,
@@ -955,7 +956,7 @@ mod tests {
         let start_board =
             Board::from_fen("rnbqkbnr/pp2pppp/2p5/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3");
         let mut board = start_board.clone();
-        let mov = Move::left_en_passant(36);
+        let mov = Move::left_en_passant(E5);
         let flags = board.make_en_passant(&mov);
         assert_eq!(
             board,
