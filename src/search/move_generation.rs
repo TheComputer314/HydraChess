@@ -74,8 +74,11 @@ impl MoveGenerator {
 
                 // Double pawn push
                 if (white && start_square.rank() == 1) || (!white && start_square.rank() == 6) {
-                    let mov = Move::double_pawn_push(start_square);
-                    self.try_move(board, white, &mut moves, &mov);
+                    let file_mask: u64 = if white { 0x1010000 } else { 0x10100000000 };
+                    if (file_mask << start_square.file()) & board.all_pieces() == 0 {
+                        let mov = Move::double_pawn_push(start_square);
+                        self.try_move(board, white, &mut moves, &mov);
+                    }
                 }
 
                 // En passant handling
@@ -315,10 +318,10 @@ mod tests {
     fn perft_starting() {
         let move_generator = MoveGenerator::new();
         let mut board = Board::starting();
-        let expected = [20, 400, 8902, 197281, 4865609];
+        let expected = [20, 400, 8902, 197281, 4865609, 119060324];
         for depth in 0..expected.len() {
             let timer = Instant::now();
-            let result = perft(&move_generator, &mut board, depth + 1);
+            let result = perft(&move_generator, &mut board, depth + 1, true);
             let elapsed = timer.elapsed();
             println!(
                 "Depth {}: Expected {} moves, calculated {} moves in {:?} milliseconds",
@@ -327,11 +330,11 @@ mod tests {
                 result,
                 elapsed.as_secs_f64() * 1000.0
             );
-            // assert_eq!(result, expected[depth]);
+            assert_eq!(result, expected[depth]);
         }
     }
 
-    fn perft(move_generator: &MoveGenerator, board: &mut Board, depth: usize) -> usize {
+    fn perft(move_generator: &MoveGenerator, board: &mut Board, depth: usize, divide: bool) -> usize {
         if depth == 0 {
             return 1;
         }
@@ -339,7 +342,11 @@ mod tests {
         let mut total_moves = 0;
         for mov in moves {
             let (last_flag, capture) = board.make_move(&mov);
-            total_moves += perft(move_generator, board, depth - 1);
+            let nodes = perft(move_generator, board, depth - 1, false);
+            if divide {
+                println!("Move {}: {} nodes", mov, nodes);
+            }
+            total_moves += nodes;
             board.unmake_move(&mov, last_flag, &capture);
         }
         total_moves

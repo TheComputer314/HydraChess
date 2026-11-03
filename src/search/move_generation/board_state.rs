@@ -340,7 +340,7 @@ impl Board {
             Some(Queen)
         } else if end_mask & self.kings != 0 {
             panic!(
-                "Move {:?} at position {:?} is a king capture?????? ",
+                "Move {:?} at position {:?} is a king capture??????",
                 mov.to_string(),
                 self.to_string()
             )
@@ -460,7 +460,7 @@ impl Board {
             }
             if self.flags & 1 << 9 != 0 // If black's queenside castling is available,
                 // and either the A file rook moved, or the king moved
-            && mov.ending_index() == A8.index()
+            && ((moved_piece == Rook && mov.starting_index() == A8.index()) || moved_piece == King)
             {
                 // Then clear the flag for black's queenside castling
                 self.flags &= !(1 << 9);
@@ -480,6 +480,8 @@ impl Board {
                 self.flags &= !(1 << 7);
             }
         }
+
+        assert_eq!(self.white & self.black, 0, "A black and white piece on the same square");
 
         (last_flags, capture)
     }
