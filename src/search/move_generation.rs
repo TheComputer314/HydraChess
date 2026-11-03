@@ -84,7 +84,7 @@ impl MoveGenerator {
                 // En passant handling
                 if let Some(en_passant_target) = board.en_passant_target() {
                     let target_rank = en_passant_target / 8;
-                    let required_rank = if white { 5 } else { 2 };
+                    let required_rank = if white { 4 } else { 3 };
                     let target_file = en_passant_target % 8;
                     if start_square.rank() == required_rank && target_rank == required_rank {
                         // Left en passant
@@ -260,14 +260,11 @@ impl MoveGenerator {
 
     fn get_indices_of_bits(bits: u64) -> Vec<u8> {
         let mut indices = Vec::new();
-        let mut i = 0;
         let mut bits = bits;
         while bits != 0 {
             let trailing_zeros = bits.trailing_zeros();
-            bits >>= trailing_zeros + 1;
-            i += trailing_zeros as u8;
-            indices.push(i);
-            i += 1;
+            bits ^= 1 << trailing_zeros;
+            indices.push(trailing_zeros as u8);
         }
         indices
     }
@@ -316,9 +313,20 @@ mod tests {
 
     #[test]
     fn perft_starting() {
+        test_perft(Board::starting(), &[20, 400, 8902, 197281, 4865609]);
+    }
+
+    #[test]
+    fn perft_starting_A2A4() {
+        test_perft(
+            Board::from_fen("rnbqkbnr/pppppppp/8/8/P7/8/1PPPPPPP/RNBQKBNR b KQkq - 0 1"),
+            &[20, 420, 9329, 217832],
+        );
+    }
+
+    fn test_perft(starting_board: Board, expected: &[usize]) {
         let move_generator = MoveGenerator::new();
-        let mut board = Board::starting();
-        let expected = [20, 400, 8902, 197281, 4865609, 119060324];
+        let mut board = starting_board.clone();
         for depth in 0..expected.len() {
             let timer = Instant::now();
             let result = perft(&move_generator, &mut board, depth + 1, true);
@@ -334,7 +342,12 @@ mod tests {
         }
     }
 
-    fn perft(move_generator: &MoveGenerator, board: &mut Board, depth: usize, divide: bool) -> usize {
+    fn perft(
+        move_generator: &MoveGenerator,
+        board: &mut Board,
+        depth: usize,
+        divide: bool,
+    ) -> usize {
         if depth == 0 {
             return 1;
         }

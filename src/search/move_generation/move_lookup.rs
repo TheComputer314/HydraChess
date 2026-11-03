@@ -42,6 +42,8 @@ impl MoveLookup {
         }
     }
 
+    // The very last square on a sliding direction is ignored, since they aren't relevant for determining if a move
+    // is blocked by a piece.
     fn rook_occupancy_mask(square: u8) -> u64 {
         ((0x7e << ((square / 8) * 8)) | (0x1010101010100 << (square % 8))) & !(1 << square)
     }

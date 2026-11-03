@@ -285,7 +285,7 @@ impl Board {
         if (self.flags >> 11) & 0b1 == 1 {
             let target = self.flags >> 12;
             let file = (target & 0b111) as u8;
-            let rank = if target & 0b1000 == 0 { 5 } else { 2 };
+            let rank = if target & 0b1000 == 0 { 4 } else { 3 };
             Some(rank * 8 + file)
         } else {
             None
@@ -765,6 +765,8 @@ impl Board {
         self.flags += 1;
         // Toggle white to move
         self.flags ^= 1 << 10;
+        // Clear en passant flags
+        self.flags &= !(0b11111 << 11);
 
         if white {
             self.flags &= !((1 << 6) + (1 << 7));
