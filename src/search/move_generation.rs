@@ -1,3 +1,4 @@
+use crate::search::move_generation::mov::PieceType::{Bishop, Knight, Queen, Rook};
 use crate::search::move_generation::mov::Square;
 use board_state::Board;
 use mov::Move;
@@ -35,7 +36,6 @@ impl MoveGenerator {
                 let mut pawn_moves = 0;
                 let any_piece = friendly_pieces | enemy_pieces;
 
-                // TODO: Handle pawn promotions
                 // Single pawn push
                 let forward = if white {
                     start_square.north(1)
@@ -53,14 +53,25 @@ impl MoveGenerator {
                     pawn_moves |= right_capture.mask() & enemy_pieces;
                 }
 
-                self.try_moves(
-                    board,
-                    white,
-                    &mut moves,
-                    start_square,
-                    pawn_moves,
-                    friendly_pieces,
-                );
+                if (white && start_square.rank() == 6) || (!white && start_square.rank() == 1) {
+                    self.try_promotions(
+                        board,
+                        white,
+                        &mut moves,
+                        start_square,
+                        pawn_moves,
+                        friendly_pieces,
+                    );
+                } else {
+                    self.try_moves(
+                        board,
+                        white,
+                        &mut moves,
+                        start_square,
+                        pawn_moves,
+                        friendly_pieces,
+                    )
+                };
 
                 // Double pawn push
                 if (white && start_square.rank() == 1) || (!white && start_square.rank() == 6) {
@@ -156,6 +167,26 @@ impl MoveGenerator {
             let mov = Move::regular(start_square, end_square);
 
             self.try_move(board, white, moves, &mov);
+        }
+    }
+
+    fn try_promotions(
+        &self,
+        board: &mut Board,
+        white: bool,
+        moves: &mut Vec<Move>,
+        start_square: Square,
+        move_mask: u64,
+        friendly_pieces: u64,
+    ) {
+        // Friendly pieces should not be captured
+        for end in Self::get_indices_of_bits(move_mask & !friendly_pieces) {
+            let end_square = Square::from_index(end);
+            for promotion in [Queen, Rook, Bishop, Knight] {
+                let mov = Move::pawn_promotion(start_square, end_square, promotion);
+
+                self.try_move(board, white, moves, &mov);
+            }
         }
     }
 
