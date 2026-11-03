@@ -6,15 +6,15 @@ use crate::search::move_generation::mov::Square::*;
 ///
 /// Board state is represented by a Little-Endian Rank-File order u64 for each piece color and each piece type.
 #[derive(Debug, Clone)]
-struct Board {
-    white: u64,
-    black: u64,
-    pawns: u64,
-    knights: u64,
-    bishops: u64,
-    rooks: u64,
-    queens: u64,
-    kings: u64,
+pub struct Board {
+    pub white: u64,
+    pub black: u64,
+    pub pawns: u64,
+    pub knights: u64,
+    pub bishops: u64,
+    pub rooks: u64,
+    pub queens: u64,
+    pub kings: u64,
     /// Miscellaneous information about the board state.
     ///
     /// From least significant bit:
