@@ -22,6 +22,7 @@ impl MoveGenerator {
         let white = board.white_to_move();
 
         let friendly_pieces = if white { board.white } else { board.black };
+        let enemy_pieces = if white { board.black } else { board.white };
 
         let friendly_piece_indices = Self::get_indices_of_bits(friendly_pieces);
 
@@ -31,7 +32,60 @@ impl MoveGenerator {
             let start_square = Square::from_index(square);
             let square_mask = start_square.mask();
             if board.pawns & square_mask != 0 {
-                todo!()
+                let mut pawn_moves = 0;
+                let any_piece = friendly_pieces | enemy_pieces;
+
+                // TODO: Handle pawn promotions
+                // Single pawn push
+                let forward = if white {
+                    start_square.north(1)
+                } else {
+                    start_square.south(1)
+                };
+                pawn_moves |= forward.mask() & !any_piece;
+                // Captures
+                if start_square.file() > 0 {
+                    let left_capture = forward.west(1);
+                    pawn_moves |= left_capture.mask() & enemy_pieces;
+                }
+                if start_square.file() < 7 {
+                    let right_capture = forward.east(1);
+                    pawn_moves |= right_capture.mask() & enemy_pieces;
+                }
+
+                self.try_moves(
+                    board,
+                    white,
+                    &mut moves,
+                    start_square,
+                    pawn_moves,
+                    friendly_pieces,
+                );
+
+                // Double pawn push
+                if (white && start_square.rank() == 1) || (!white && start_square.rank() == 6) {
+                    let mov = Move::double_pawn_push(start_square);
+                    self.try_move(board, white, &mut moves, &mov);
+                }
+
+                // En passant handling
+                if let Some(en_passant_target) = board.en_passant_target() {
+                    let target_rank = en_passant_target / 8;
+                    let required_rank = if white { 5 } else { 2 };
+                    let target_file = en_passant_target % 8;
+                    if start_square.rank() == required_rank && target_rank == required_rank {
+                        // Left en passant
+                        if start_square.file() > 0 && target_file == start_square.file() - 1 {
+                            let mov = Move::left_en_passant(start_square);
+                            self.try_move(board, white, &mut moves, &mov);
+                        }
+                        // Right en passant
+                        if start_square.file() < 7 && target_file == start_square.file() + 1 {
+                            let mov = Move::right_en_passant(start_square);
+                            self.try_move(board, white, &mut moves, &mov);
+                        }
+                    }
+                }
             } else if board.knights & square_mask != 0 {
                 self.try_moves(
                     board,
@@ -101,12 +155,16 @@ impl MoveGenerator {
             let end_square = Square::from_index(end);
             let mov = Move::regular(start_square, end_square);
 
-            let (flags, capture) = board.make_move(&mov);
-            if !self.king_in_check(board, white) {
-                moves.push(mov);
-            }
-            board.unmake_move(&mov, flags, &capture);
+            self.try_move(board, white, moves, &mov);
         }
+    }
+
+    fn try_move(&self, board: &mut Board, white: bool, moves: &mut Vec<Move>, mov: &Move) {
+        let (flags, capture) = board.make_move(mov);
+        if !self.king_in_check(board, white) {
+            moves.push(*mov);
+        }
+        board.unmake_move(mov, flags, &capture);
     }
 
     fn king_in_check(&self, board: &Board, white: bool) -> bool {
