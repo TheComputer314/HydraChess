@@ -1,13 +1,15 @@
 use crate::search::move_generation::mov::Square;
 use core::arch::x86_64::_pext_u64;
 
-struct MoveLookup {
+pub struct MoveLookup {
     rook_moves: [Vec<u64>; 64],
     bishop_moves: [Vec<u64>; 64],
     // Bishop occupancy masks are slow as fuck to generate, so we precompute them
     // Rooks aren't as bad, but for consistency we also precompute them
     rook_occupancy_masks: [u64; 64],
     bishop_occupancy_masks: [u64; 64],
+    knight_moves: [u64; 64],
+    king_moves: [u64; 64],
 }
 impl MoveLookup {
     pub fn new() -> Self {
@@ -15,6 +17,8 @@ impl MoveLookup {
         let mut bishop_moves = [const { Vec::new() }; 64];
         let mut rook_occupancy_masks = [0; 64];
         let mut bishop_occupancy_masks = [0; 64];
+        let mut knight_moves = [0; 64];
+        let mut king_moves = [0; 64];
         for i in 0..64 {
             rook_occupancy_masks[i] = MoveLookup::rook_occupancy_mask(i as u8);
             bishop_occupancy_masks[i] = MoveLookup::bishop_occupancy_mask(i as u8);
@@ -25,12 +29,16 @@ impl MoveLookup {
             for attack_mask in MoveLookup::get_mask_subsets(bishop_occupancy_masks[i]) {
                 bishop_moves[i].push(Self::bishop_move_mask(i as u8, attack_mask));
             }
+            knight_moves[i] = Self::knight_move_mask(i as u8);
+            king_moves[i] = Self::king_move_mask(i as u8);
         }
         Self {
             rook_moves,
             bishop_moves,
             rook_occupancy_masks,
             bishop_occupancy_masks,
+            knight_moves,
+            king_moves,
         }
     }
 
@@ -187,11 +195,42 @@ impl MoveLookup {
         mask
     }
 
+    fn knight_move_mask(square: u8) -> u64 {
+        let b = 1 << square;
+        ((b << 17) & !0x101010101010101) | // NNE
+            ((b << 10) & !0x303030303030303) | // ENE
+            ((b >> 6) & !0x303030303030303) | // ESE
+            ((b >> 15) & !0x101010101010101) | // SSE
+            ((b >> 17) & !0x8080808080808080) | // SSW
+                ((b >> 10) & !0xc0c0c0c0c0c0c0c0) | // WSW
+            ((b << 6) & !0xc0c0c0c0c0c0c0c0) | // WNW
+            ((b << 15) & !0x8080808080808080) // NNW
+    }
+
+    fn king_move_mask(square: u8) -> u64 {
+        let b = 1 << square;
+        let mut mask = b;
+        if square % 8 != 0 {
+            mask |= b >> 1;
+        }
+        if square % 8 != 7 {
+            mask |= b << 1;
+        }
+        if square / 8 != 0 {
+            mask |= mask >> 8;
+        }
+        if square / 8 != 7 {
+            mask |= mask << 8;
+
+        }
+        mask & !b
+    }
+
     pub fn possible_rook_moves(&self, square: Square, blocker_pieces: u64) -> u64 {
         let mask;
         unsafe {
             mask = self.rook_moves[square.index() as usize]
-                [_pext_u64(blocker_pieces, Self::rook_occupancy_mask(square.index())) as usize];
+                [_pext_u64(blocker_pieces, self.rook_occupancy_masks[square.index() as usize]) as usize];
         }
         mask
     }
@@ -200,7 +239,7 @@ impl MoveLookup {
         let mask;
         unsafe {
             mask = self.bishop_moves[square.index() as usize]
-                [_pext_u64(blocker_pieces, Self::bishop_occupancy_mask(square.index())) as usize];
+                [_pext_u64(blocker_pieces, self.bishop_occupancy_masks[square.index() as usize]) as usize];
         }
         mask
     }
@@ -209,11 +248,18 @@ impl MoveLookup {
         self.possible_bishop_moves(square, blocker_pieces) | self.possible_rook_moves(square, blocker_pieces)
     }
 
+    pub fn possible_knight_moves(&self, square: Square) -> u64 {
+        self.knight_moves[square.index() as usize]
+    }
+
+    pub fn possible_king_moves(&self, square: Square) -> u64 {
+        self.king_moves[square.index() as usize]
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::search::move_generation::mov::Square::C3;
+    use crate::search::move_generation::mov::Square::{A1, C3, G3, H4, H8};
     use crate::search::move_generation::move_lookup::MoveLookup;
     use std::time::Instant;
 
@@ -245,5 +291,22 @@ mod tests {
         assert_eq!(lookup.possible_bishop_moves(C3, 0), 9241421692918565393);
         assert_eq!(lookup.possible_bishop_moves(C3, 134217728), 4462742033);
         assert_eq!(lookup.possible_bishop_moves(C3, 35184506306560), 4462742033);
+    }
+
+    #[test]
+    fn test_knight_moves() {
+        let lookup = MoveLookup::new();
+        assert_eq!(lookup.possible_knight_moves(C3), 0xa1100110a);
+        assert_eq!(lookup.possible_knight_moves(A1), 0x20400);
+        assert_eq!(lookup.possible_knight_moves(G3), 0xa0100010a0);
+    }
+
+    #[test]
+    fn test_king_moves() {
+        let lookup = MoveLookup::new();
+        assert_eq!(lookup.possible_king_moves(C3), 0xe0a0e00);
+        assert_eq!(lookup.possible_king_moves(A1), 0x302);
+        assert_eq!(lookup.possible_king_moves(H8), 0x40c0000000000000);
+        assert_eq!(lookup.possible_king_moves(H4), 0xc040c00000);
     }
 }
