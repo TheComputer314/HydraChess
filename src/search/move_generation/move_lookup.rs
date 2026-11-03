@@ -1,4 +1,4 @@
-use crate::search::move_generation::mov::Square;
+use crate::search::move_generation::mov::squares;
 use core::arch::x86_64::_pext_u64;
 
 pub struct MoveLookup {
@@ -228,40 +228,40 @@ impl MoveLookup {
         mask & !b
     }
 
-    pub fn possible_rook_moves(&self, square: Square, blocker_pieces: u64) -> u64 {
+    pub fn possible_rook_moves(&self, square: u8, blocker_pieces: u64) -> u64 {
         let mask;
         unsafe {
-            mask = self.rook_moves[square.index() as usize]
-                [_pext_u64(blocker_pieces, self.rook_occupancy_masks[square.index() as usize]) as usize];
+            mask = self.rook_moves[square as usize]
+                [_pext_u64(blocker_pieces, self.rook_occupancy_masks[square as usize]) as usize];
         }
         mask
     }
 
-    pub fn possible_bishop_moves(&self, square: Square, blocker_pieces: u64) -> u64 {
+    pub fn possible_bishop_moves(&self, square: u8, blocker_pieces: u64) -> u64 {
         let mask;
         unsafe {
-            mask = self.bishop_moves[square.index() as usize]
-                [_pext_u64(blocker_pieces, self.bishop_occupancy_masks[square.index() as usize]) as usize];
+            mask = self.bishop_moves[square as usize]
+                [_pext_u64(blocker_pieces, self.bishop_occupancy_masks[square as usize]) as usize];
         }
         mask
     }
 
-    pub fn possible_queen_moves(&self, square: Square, blocker_pieces: u64) -> u64 {
+    pub fn possible_queen_moves(&self, square: u8, blocker_pieces: u64) -> u64 {
         self.possible_bishop_moves(square, blocker_pieces) | self.possible_rook_moves(square, blocker_pieces)
     }
 
-    pub fn possible_knight_moves(&self, square: Square) -> u64 {
-        self.knight_moves[square.index() as usize]
+    pub fn possible_knight_moves(&self, square: u8) -> u64 {
+        self.knight_moves[square as usize]
     }
 
-    pub fn possible_king_moves(&self, square: Square) -> u64 {
-        self.king_moves[square.index() as usize]
+    pub fn possible_king_moves(&self, square: u8) -> u64 {
+        self.king_moves[square as usize]
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::search::move_generation::mov::Square::{A1, C3, G3, H4, H8};
+    use crate::search::move_generation::mov::squares::{A1, C3, G3, H4, H8};
     use crate::search::move_generation::move_lookup::MoveLookup;
     use std::time::Instant;
 

@@ -1,6 +1,6 @@
 use super::mov::PieceType::*;
-use super::mov::{Move, PieceType, Square};
-use crate::search::move_generation::mov::Square::*;
+use super::mov::{squares, Move, PieceType};
+use super::mov::squares::*;
 use std::fmt;
 use std::fmt::Debug;
 
@@ -131,8 +131,7 @@ impl fmt::Display for Board {
         write!(f, " ")?;
 
         if let Some(target) = self.en_passant_target() {
-            let target = Square::from_index(target);
-            write!(f, "{:?}", target)?;
+            write!(f, "{:?}", to_name(target))?;
         } else {
             write!(f, "-")?;
         }
@@ -424,28 +423,28 @@ impl Board {
         if white {
             if self.flags & 1 << 6 != 0 // If white's kingside castling is available,
                 // and either the H file rook moved, or the king moved
-                && ((moved_piece == Rook && mov.starting_index() == H1.index()) || moved_piece == King)
+                && ((moved_piece == Rook && mov.starting_index() == H1) || moved_piece == King)
             {
                 // Then clear the flag for white's kingside castling
                 self.flags &= !(1 << 6);
             }
             if self.flags & 1 << 7 != 0 // If white's queenside castling is available,
                 // and either the A file rook or the king moved
-                && ((moved_piece == Rook && mov.starting_index() == A1.index()) || moved_piece == King)
+                && ((moved_piece == Rook && mov.starting_index() == A1) || moved_piece == King)
             {
                 // Then clear the flag for white's queenside castling
                 self.flags &= !(1 << 7);
             }
             if self.flags & 1 << 8 != 0 // If black's kingside castling is available, 
                 // and we're capturing the rook on H8
-            && mov.ending_index() == H8.index()
+            && mov.ending_index() == H8
             {
                 // Then clear the flag for black's kingside castling
                 self.flags &= !(1 << 8);
             }
             if self.flags & 1 << 9 != 0 // If black's queenside castling is available,
                 // and we're capturing the rook on A8
-            && mov.ending_index() == A8.index()
+            && mov.ending_index() == A8
             {
                 // Then clear the flag for black's queenside castling
                 self.flags &= !(1 << 9);
@@ -453,28 +452,28 @@ impl Board {
         } else {
             if self.flags & 1 << 8 != 0 // If black's kingside castling is available,
                 // and either the H file rook moved, or the king moved
-                && ((moved_piece == Rook && mov.starting_index() == H8.index()) || moved_piece == King)
+                && ((moved_piece == Rook && mov.starting_index() == H8) || moved_piece == King)
             {
                 // Then clear the flag for black's kingside castling
                 self.flags &= !(1 << 8);
             }
             if self.flags & 1 << 9 != 0 // If black's queenside castling is available,
                 // and either the A file rook moved, or the king moved
-            && ((moved_piece == Rook && mov.starting_index() == A8.index()) || moved_piece == King)
+            && ((moved_piece == Rook && mov.starting_index() == A8) || moved_piece == King)
             {
                 // Then clear the flag for black's queenside castling
                 self.flags &= !(1 << 9);
             }
             if self.flags & 1 << 6 != 0 // If white's kingside castling is available,
             // and we're capturing the rook on H1,
-            && mov.ending_index() == H1.index()
+            && mov.ending_index() == H1
             {
                 // Then clear the flag for white's kingside castling
                 self.flags &= !(1 << 6);
             }
             if self.flags & 1 << 7 != 0 // If white's queenside castling is available,
             // and we're capturing the rook on A1,
-            && mov.ending_index() == A1.index()
+            && mov.ending_index() == A1
             {
                 // Then clear the flag for white's queenside castling
                 self.flags &= !(1 << 7);
@@ -731,19 +730,19 @@ impl Board {
         let rook_end_mask;
         if white {
             if kingside {
-                rook_start_mask = H1.mask();
-                rook_end_mask = F1.mask();
+                rook_start_mask = mask(H1);
+                rook_end_mask = mask(F1);
             } else {
-                rook_start_mask = A1.mask();
-                rook_end_mask = D1.mask();
+                rook_start_mask = mask(A1);
+                rook_end_mask = mask(D1);
             }
         } else {
             if kingside {
-                rook_start_mask = H8.mask();
-                rook_end_mask = F8.mask();
+                rook_start_mask = mask(H8);
+                rook_end_mask = mask(F8);
             } else {
-                rook_start_mask = A8.mask();
-                rook_end_mask = D8.mask();
+                rook_start_mask = mask(A8);
+                rook_end_mask = mask(D8);
             }
         }
 
@@ -787,19 +786,19 @@ impl Board {
         let rook_end_mask;
         if white {
             if kingside {
-                rook_start_mask = H1.mask();
-                rook_end_mask = F1.mask();
+                rook_start_mask = mask(H1);
+                rook_end_mask = mask(F1);
             } else {
-                rook_start_mask = A1.mask();
-                rook_end_mask = D1.mask();
+                rook_start_mask = mask(A1);
+                rook_end_mask = mask(D1);
             }
         } else {
             if kingside {
-                rook_start_mask = H8.mask();
-                rook_end_mask = F8.mask();
+                rook_start_mask = mask(H8);
+                rook_end_mask = mask(F8);
             } else {
-                rook_start_mask = A8.mask();
-                rook_end_mask = D8.mask();
+                rook_start_mask = mask(A8);
+                rook_end_mask = mask(D8);
             }
         }
 
@@ -823,7 +822,7 @@ impl Board {
 mod tests {
     use super::super::mov::{Move, PieceType};
     use super::Board;
-    use crate::search::move_generation::mov::Square::{A1, A2, A3, A7, B8, C3, E4, E5};
+    use super::super::mov::squares::{A1, A2, A3, A7, B8, C3, E4, E5};
 
     #[test]
     fn test_load_starting() {

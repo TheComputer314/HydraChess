@@ -1,5 +1,5 @@
 use crate::search::move_generation::mov::PieceType::{Bishop, King, Knight, Pawn, Queen, Rook};
-use crate::search::move_generation::mov::Square;
+use crate::search::move_generation::mov::squares::*;
 use board_state::Board;
 use mov::Move;
 use move_lookup::MoveLookup;
@@ -29,30 +29,29 @@ impl MoveGenerator {
 
         let mut moves = Vec::new();
 
-        for square in friendly_piece_indices {
-            let start_square = Square::from_index(square);
-            let square_mask = start_square.mask();
+        for start_square in friendly_piece_indices {
+            let square_mask = mask(start_square);
             if board.pawns & square_mask != 0 {
                 let mut pawn_moves = 0;
 
                 // Single pawn push
                 let forward = if white {
-                    start_square.north(1)
+                    north(start_square)
                 } else {
-                    start_square.south(1)
+                    south(start_square)
                 };
-                pawn_moves |= forward.mask() & !board.all_pieces();
+                pawn_moves |= mask(forward) & !board.all_pieces();
                 // Captures
-                if start_square.file() > 0 {
-                    let left_capture = forward.west(1);
-                    pawn_moves |= left_capture.mask() & enemy_pieces;
+                if file(start_square) > 0 {
+                    let left_capture = west(forward);
+                    pawn_moves |= mask(left_capture) & enemy_pieces;
                 }
-                if start_square.file() < 7 {
-                    let right_capture = forward.east(1);
-                    pawn_moves |= right_capture.mask() & enemy_pieces;
+                if file(start_square) < 7 {
+                    let right_capture = east(forward);
+                    pawn_moves |= mask(right_capture) & enemy_pieces;
                 }
 
-                if (white && start_square.rank() == 6) || (!white && start_square.rank() == 1) {
+                if (white && rank(start_square) == 6) || (!white && rank(start_square) == 1) {
                     self.try_promotions(
                         board,
                         white,
@@ -73,9 +72,9 @@ impl MoveGenerator {
                 };
 
                 // Double pawn push
-                if (white && start_square.rank() == 1) || (!white && start_square.rank() == 6) {
+                if (white && rank(start_square) == 1) || (!white && rank(start_square) == 6) {
                     let file_mask: u64 = if white { 0x1010000 } else { 0x10100000000 };
-                    if (file_mask << start_square.file()) & board.all_pieces() == 0 {
+                    if (file_mask << file(start_square)) & board.all_pieces() == 0 {
                         let mov = Move::double_pawn_push(start_square);
                         self.try_move(board, white, &mut moves, &mov);
                     }
@@ -86,14 +85,14 @@ impl MoveGenerator {
                     let target_rank = en_passant_target / 8;
                     let required_rank = if white { 4 } else { 3 };
                     let target_file = en_passant_target % 8;
-                    if start_square.rank() == required_rank && target_rank == required_rank {
+                    if rank(start_square) == required_rank && target_rank == required_rank {
                         // Left en passant
-                        if start_square.file() > 0 && target_file == start_square.file() - 1 {
+                        if file(start_square) > 0 && target_file == file(start_square) - 1 {
                             let mov = Move::left_en_passant(start_square);
                             self.try_move(board, white, &mut moves, &mov);
                         }
                         // Right en passant
-                        if start_square.file() < 7 && target_file == start_square.file() + 1 {
+                        if file(start_square) < 7 && target_file == file(start_square) + 1 {
                             let mov = Move::right_en_passant(start_square);
                             self.try_move(board, white, &mut moves, &mov);
                         }
@@ -162,13 +161,12 @@ impl MoveGenerator {
         board: &mut Board,
         white: bool,
         moves: &mut Vec<Move>,
-        start_square: Square,
+        start_square: u8,
         move_mask: u64,
         friendly_pieces: u64,
     ) {
         // Friendly pieces should not be captured
-        for end in Self::get_indices_of_bits(move_mask & !friendly_pieces) {
-            let end_square = Square::from_index(end);
+        for end_square in Self::get_indices_of_bits(move_mask & !friendly_pieces) {
             let mov = Move::regular(start_square, end_square);
 
             self.try_move(board, white, moves, &mov);
@@ -180,13 +178,12 @@ impl MoveGenerator {
         board: &mut Board,
         white: bool,
         moves: &mut Vec<Move>,
-        start_square: Square,
+        start_square: u8,
         move_mask: u64,
         friendly_pieces: u64,
     ) {
         // Friendly pieces should not be captured
-        for end in Self::get_indices_of_bits(move_mask & !friendly_pieces) {
-            let end_square = Square::from_index(end);
+        for end_square in Self::get_indices_of_bits(move_mask & !friendly_pieces) {
             for promotion in [Queen, Rook, Bishop, Knight] {
                 let mov = Move::pawn_promotion(start_square, end_square, promotion);
 
@@ -205,7 +202,7 @@ impl MoveGenerator {
 
     pub fn king_in_check(&self, board: &Board, white: bool) -> bool {
         let king_square =
-            Square::from_index(board.get_bitboard(white, King).trailing_zeros() as u8);
+            board.get_bitboard(white, King).trailing_zeros() as u8;
         let friendly_pieces = if white { board.white } else { board.black };
 
         let horizontal_attacks = self
@@ -237,18 +234,18 @@ impl MoveGenerator {
         }
 
         let final_rank = if white { 7 } else { 0 };
-        if king_square.rank() != final_rank {
+        if rank(king_square) != final_rank {
             let mut pawn_attacks: u64 = 0;
             let backwards = if white {
-                king_square.north(1)
+                north(king_square)
             } else {
-                king_square.south(1)
+                south(king_square)
             };
-            if king_square.file() != 0 {
-                pawn_attacks |= backwards.west(1).mask();
+            if file(king_square) != 0 {
+                pawn_attacks |= mask(west(backwards));
             }
-            if king_square.file() != 7 {
-                pawn_attacks |= backwards.east(1).mask();
+            if file(king_square) != 7 {
+                pawn_attacks |= mask(east(backwards));
             }
             if pawn_attacks & board.get_bitboard(!white, Pawn) != 0 {
                 return true;
@@ -351,7 +348,7 @@ mod tests {
         if depth == 0 {
             return 1;
         }
-        let mut moves = move_generator.legal_moves(board);
+        let moves = move_generator.legal_moves(board);
         let mut total_moves = 0;
         for mov in moves {
             let (last_flag, capture) = board.make_move(&mov);
