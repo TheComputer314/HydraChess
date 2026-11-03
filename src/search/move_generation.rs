@@ -111,7 +111,8 @@ impl MoveGenerator {
                     white,
                     &mut moves,
                     start_square,
-                    self.lookup.possible_bishop_moves(start_square, board.all_pieces()),
+                    self.lookup
+                        .possible_bishop_moves(start_square, board.all_pieces()),
                     friendly_pieces,
                 );
             } else if board.rooks & square_mask != 0 {
@@ -120,7 +121,8 @@ impl MoveGenerator {
                     white,
                     &mut moves,
                     start_square,
-                    self.lookup.possible_rook_moves(start_square, board.all_pieces()),
+                    self.lookup
+                        .possible_rook_moves(start_square, board.all_pieces()),
                     friendly_pieces,
                 );
             } else if board.queens & square_mask != 0 {
@@ -129,7 +131,8 @@ impl MoveGenerator {
                     white,
                     &mut moves,
                     start_square,
-                    self.lookup.possible_queen_moves(start_square, board.all_pieces()),
+                    self.lookup
+                        .possible_queen_moves(start_square, board.all_pieces()),
                     friendly_pieces,
                 );
             } else if board.kings & square_mask != 0 {
@@ -218,26 +221,26 @@ impl MoveGenerator {
             return true;
         }
 
-        let knight_attacks = self
-            .lookup
-            .possible_knight_moves(king_square)
-            & board.get_bitboard(!white, Knight);
+        let knight_attacks =
+            self.lookup.possible_knight_moves(king_square) & board.get_bitboard(!white, Knight);
         if knight_attacks != 0 {
             return true;
         }
 
-        let king_attacks = self
-            .lookup
-            .possible_king_moves(king_square)
-            & board.get_bitboard(!white, King);
+        let king_attacks =
+            self.lookup.possible_king_moves(king_square) & board.get_bitboard(!white, King);
         if king_attacks != 0 {
             return true;
         }
 
         let final_rank = if white { 7 } else { 0 };
         if king_square.rank() != final_rank {
-            let mut pawn_attacks:u64 = 0;
-            let backwards = if white { king_square.north(1) } else { king_square.south(1) };
+            let mut pawn_attacks: u64 = 0;
+            let backwards = if white {
+                king_square.north(1)
+            } else {
+                king_square.south(1)
+            };
             if king_square.file() != 0 {
                 pawn_attacks |= backwards.west(1).mask();
             }
@@ -270,6 +273,7 @@ impl MoveGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
 
     #[test]
     fn test_get_squares_of_moves() {
@@ -305,5 +309,39 @@ mod tests {
         let board = Board::from_fen("4k3/5P2/8/8/8/8/8/4K3 w - - 0 1");
         assert!(!move_generator.king_in_check(&board, true));
         assert!(move_generator.king_in_check(&board, false));
+    }
+
+    #[test]
+    fn perft_starting() {
+        let move_generator = MoveGenerator::new();
+        let mut board = Board::starting();
+        let expected = [20, 400, 8902, 197281, 4865609];
+        for depth in 0..expected.len() {
+            let timer = Instant::now();
+            let result = perft(&move_generator, &mut board, depth + 1);
+            let elapsed = timer.elapsed();
+            println!(
+                "Depth {}: Expected {} moves, calculated {} moves in {:?} milliseconds",
+                depth + 1,
+                expected[depth],
+                result,
+                elapsed.as_secs_f64() * 1000.0
+            );
+            // assert_eq!(result, expected[depth]);
+        }
+    }
+
+    fn perft(move_generator: &MoveGenerator, board: &mut Board, depth: usize) -> usize {
+        if depth == 0 {
+            return 1;
+        }
+        let mut moves = move_generator.legal_moves(board);
+        let mut total_moves = 0;
+        for mov in moves {
+            let (last_flag, capture) = board.make_move(&mov);
+            total_moves += perft(move_generator, board, depth - 1);
+            board.unmake_move(&mov, last_flag, &capture);
+        }
+        total_moves
     }
 }

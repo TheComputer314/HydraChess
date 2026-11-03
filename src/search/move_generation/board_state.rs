@@ -1,6 +1,8 @@
 use super::mov::PieceType::*;
-use super::mov::{Move, PieceType};
+use super::mov::{Move, PieceType, Square};
 use crate::search::move_generation::mov::Square::*;
+use std::fmt;
+use std::fmt::Debug;
 
 /// Represents the state of a chess board.
 ///
@@ -47,6 +49,101 @@ impl PartialEq for Board {
             } else {
                 self.flags == other.flags
             }
+    }
+}
+
+impl fmt::Display for Board {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for rank in (0..8).rev() {
+            let mut empty = 0;
+            for file in 0..8 {
+                let square_mask = 1 << (rank * 8 + file);
+                if self.all_pieces() & square_mask == 0 {
+                    empty += 1;
+                } else {
+                    if empty != 0 {
+                        write!(f, "{}", empty)?;
+                        empty = 0;
+                    }
+                    if self.get_bitboard(true, Pawn) & square_mask != 0 {
+                        write!(f, "P")?;
+                    } else if self.get_bitboard(true, Knight) & square_mask != 0 {
+                        write!(f, "N")?;
+                    } else if self.get_bitboard(true, Bishop) & square_mask != 0 {
+                        write!(f, "B")?;
+                    } else if self.get_bitboard(true, Rook) & square_mask != 0 {
+                        write!(f, "R")?;
+                    } else if self.get_bitboard(true, Queen) & square_mask != 0 {
+                        write!(f, "Q")?;
+                    } else if self.get_bitboard(true, King) & square_mask != 0 {
+                        write!(f, "K")?;
+                    } else if self.get_bitboard(false, Pawn) & square_mask != 0 {
+                        write!(f, "p")?;
+                    } else if self.get_bitboard(false, Knight) & square_mask != 0 {
+                        write!(f, "n")?;
+                    } else if self.get_bitboard(false, Bishop) & square_mask != 0 {
+                        write!(f, "b")?;
+                    } else if self.get_bitboard(false, Rook) & square_mask != 0 {
+                        write!(f, "r")?;
+                    } else if self.get_bitboard(false, Queen) & square_mask != 0 {
+                        write!(f, "q")?;
+                    } else if self.get_bitboard(false, King) & square_mask != 0 {
+                        write!(f, "k")?;
+                    }
+                }
+                if file == 7 && empty != 0 {
+                    write!(f, "{}", empty)?;
+                }
+            }
+            if rank != 0 {
+                write!(f, "/")?;
+            }
+        }
+
+        write!(f, " ")?;
+
+        if self.white_to_move() {
+            write!(f, "w")?;
+        } else {
+            write!(f, "b")?;
+        }
+
+        write!(f, " ")?;
+
+        if self.get_castling_rights() == 0 {
+            write!(f, "-")?;
+        } else {
+            let castling = self.get_castling_rights();
+            if castling & 1 != 0 {
+                write!(f, "K")?;
+            }
+            if castling & 2 != 0 {
+                write!(f, "Q")?;
+            }
+            if castling & 4 != 0 {
+                write!(f, "k")?;
+            }
+            if castling & 8 != 0 {
+                write!(f, "q")?;
+            }
+        }
+
+        write!(f, " ")?;
+
+        if let Some(target) = self.en_passant_target() {
+            let target = Square::from_index(target);
+            write!(f, "{:?}", target)?;
+        } else {
+            write!(f, "-")?;
+        }
+
+        write!(f, " ")?;
+
+        write!(f, "{}", self.get_halfmove_clock())?;
+
+        write!(f, " 1")?;
+
+        Ok(())
     }
 }
 
@@ -200,6 +297,14 @@ impl Board {
     /// Returns the state of the board's flags before the move was made.
     /// If the move captures a piece, the captured piece is returned. Otherwise, None is returned.
     pub fn make_move(&mut self, mov: &Move) -> (u16, Option<PieceType>) {
+        // Handle special moves
+        match mov.flags() {
+            0b0001 => return (self.make_en_passant(&mov), None),
+            0b0010 => return (self.make_castle(&mov), None),
+            0b0011 => return (self.make_double_pawn_push(&mov), None),
+            _ => {}
+        };
+
         let last_flags = self.flags;
         let start_mask = mov.starting_mask();
         let end_mask = mov.ending_mask();
@@ -234,7 +339,11 @@ impl Board {
         } else if end_mask & self.queens != 0 {
             Some(Queen)
         } else if end_mask & self.kings != 0 {
-            panic!("King capture??????")
+            panic!(
+                "Move {:?} at position {:?} is a king capture?????? ",
+                mov.to_string(),
+                self.to_string()
+            )
         } else {
             None
         };
@@ -379,6 +488,13 @@ impl Board {
     ///
     /// Takes the last flag and the captured piece type as input.
     pub fn unmake_move(&mut self, mov: &Move, last_flag: u16, capture: &Option<PieceType>) {
+        match mov.flags() {
+            0b0001 => return self.unmake_en_passant(&mov, last_flag),
+            0b0010 => return self.unmake_castle(&mov, last_flag),
+            0b0011 => return self.unmake_double_pawn_push(&mov, last_flag),
+            _ => {}
+        }
+
         let start_mask = mov.starting_mask();
         let end_mask = mov.ending_mask();
 
@@ -467,7 +583,7 @@ impl Board {
     /// Makes a double pawn push on the board state, assuming that the move is legal.
     ///
     /// Returns the state of the board's flags before the move.
-    pub fn make_double_pawn_push(&mut self, mov: &Move) -> u16 {
+    fn make_double_pawn_push(&mut self, mov: &Move) -> u16 {
         debug_assert!(
             mov.flags() == 0b0011,
             "Double pawn push must have flags 0b0011"
@@ -510,7 +626,7 @@ impl Board {
     /// Unmakes a double pawn push.
     ///
     /// Takes the last flag value before the move.
-    pub fn unmake_double_pawn_push(&mut self, mov: &Move, last_flag: u16) {
+    fn unmake_double_pawn_push(&mut self, mov: &Move, last_flag: u16) {
         let start_mask = mov.starting_mask();
         let end_mask = mov.ending_mask();
 
@@ -532,7 +648,7 @@ impl Board {
     /// Makes an en passant move on the board state, assuming that the move is legal.
     ///
     /// Returns the state of the board's flags before the move.
-    pub fn make_en_passant(&mut self, mov: &Move) -> u16 {
+    fn make_en_passant(&mut self, mov: &Move) -> u16 {
         debug_assert!(mov.flags() == 0b0001, "En passant must have flag 0b0001");
 
         let start_mask = mov.starting_mask();
@@ -573,7 +689,7 @@ impl Board {
     /// Unmakes an en passant.
     ///
     /// Takes the last flag value before the move.
-    pub fn unmake_en_passant(&mut self, mov: &Move, last_flag: u16) {
+    fn unmake_en_passant(&mut self, mov: &Move, last_flag: u16) {
         let start_mask = mov.starting_mask();
         let end_mask = mov.ending_mask();
 
@@ -603,7 +719,7 @@ impl Board {
     /// Makes a castling move on the board state, assuming that the move is legal.
     ///
     /// Returns the state of the board's flags before the move.
-    pub fn make_castle(&mut self, mov: &Move) -> u16 {
+    fn make_castle(&mut self, mov: &Move) -> u16 {
         let white = self.white & mov.starting_mask() != 0;
         let kingside = mov.ending_index() % 8 == 6;
 
@@ -657,7 +773,7 @@ impl Board {
         flags
     }
 
-    pub fn unmake_castle(&mut self, mov: &Move, last_flags: u16) {
+    fn unmake_castle(&mut self, mov: &Move, last_flags: u16) {
         let white = self.white & mov.ending_mask() != 0;
         let kingside = mov.ending_index() % 8 == 6;
 
@@ -909,7 +1025,7 @@ mod tests {
         let start_board =
             Board::from_fen("rnbqkb1r/pppppppp/8/8/4n3/2N5/PPPPPPPP/R1BQKBNR w KQkq - 0 1");
         let mut board = start_board.clone();
-        let mov = Move::regular(C3,E4);
+        let mov = Move::regular(C3, E4);
         let (flags, capture) = board.make_move(&mov);
         assert_eq!(
             board,

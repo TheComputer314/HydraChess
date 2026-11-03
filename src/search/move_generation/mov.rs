@@ -1,3 +1,5 @@
+use std::fmt;
+use std::fmt::{write, Formatter};
 use strum_macros::FromRepr;
 use crate::search::move_generation::mov::Square::{C1, C8, E1, E8, G1, G8};
 
@@ -18,6 +20,14 @@ use crate::search::move_generation::mov::Square::{C1, C8, E1, E8, G1, G8};
 #[derive(Clone, Copy)]
 pub struct Move {
     data: u16,
+}
+
+impl fmt::Display for Move {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let starting_square = Square::from_index(self.starting_index());
+        let ending_square = Square::from_index(self.ending_index());
+        write!(f, "{:?}{:?}", starting_square, ending_square)
+    }
 }
 
 impl Move {
@@ -117,7 +127,7 @@ pub enum PieceType {
 }
 
 #[repr(u8)]
-#[derive(Copy, Clone, PartialEq, FromRepr)]
+#[derive(Copy, Clone, PartialEq, Debug, FromRepr)]
 // Shut clippy up about unused
 #[allow(unused)]
 pub enum Square {
