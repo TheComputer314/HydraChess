@@ -317,7 +317,7 @@ mod tests {
     }
 
     #[test]
-    fn perft_starting_A2A4() {
+    fn perft_starting_a2_a4() {
         test_perft(
             Board::from_fen("rnbqkbnr/pppppppp/8/8/P7/8/1PPPPPPP/RNBQKBNR b KQkq - 0 1"),
             &[20, 420, 9329, 217832],
