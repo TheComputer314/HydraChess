@@ -168,6 +168,10 @@ impl Board {
             }
     }
 
+    pub fn all_pieces(&self) -> u64 {
+        self.white | self.black
+    }
+
     pub fn get_halfmove_clock(&self) -> u8 {
         (self.flags & 0b111111) as u8
     }

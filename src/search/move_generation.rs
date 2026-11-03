@@ -1,4 +1,4 @@
-use crate::search::move_generation::mov::PieceType::{Bishop, Knight, Queen, Rook};
+use crate::search::move_generation::mov::PieceType::{Bishop, King, Knight, Pawn, Queen, Rook};
 use crate::search::move_generation::mov::Square;
 use board_state::Board;
 use mov::Move;
@@ -34,7 +34,6 @@ impl MoveGenerator {
             let square_mask = start_square.mask();
             if board.pawns & square_mask != 0 {
                 let mut pawn_moves = 0;
-                let any_piece = friendly_pieces | enemy_pieces;
 
                 // Single pawn push
                 let forward = if white {
@@ -42,7 +41,7 @@ impl MoveGenerator {
                 } else {
                     start_square.south(1)
                 };
-                pawn_moves |= forward.mask() & !any_piece;
+                pawn_moves |= forward.mask() & !board.all_pieces();
                 // Captures
                 if start_square.file() > 0 {
                     let left_capture = forward.west(1);
@@ -112,7 +111,7 @@ impl MoveGenerator {
                     white,
                     &mut moves,
                     start_square,
-                    self.lookup.possible_bishop_moves(start_square, 0),
+                    self.lookup.possible_bishop_moves(start_square, board.all_pieces()),
                     friendly_pieces,
                 );
             } else if board.rooks & square_mask != 0 {
@@ -121,7 +120,7 @@ impl MoveGenerator {
                     white,
                     &mut moves,
                     start_square,
-                    self.lookup.possible_rook_moves(start_square, 0),
+                    self.lookup.possible_rook_moves(start_square, board.all_pieces()),
                     friendly_pieces,
                 );
             } else if board.queens & square_mask != 0 {
@@ -130,7 +129,7 @@ impl MoveGenerator {
                     white,
                     &mut moves,
                     start_square,
-                    self.lookup.possible_queen_moves(start_square, 0),
+                    self.lookup.possible_queen_moves(start_square, board.all_pieces()),
                     friendly_pieces,
                 );
             } else if board.kings & square_mask != 0 {
@@ -198,8 +197,59 @@ impl MoveGenerator {
         board.unmake_move(mov, flags, &capture);
     }
 
-    fn king_in_check(&self, board: &Board, white: bool) -> bool {
-        todo!()
+    pub fn king_in_check(&self, board: &Board, white: bool) -> bool {
+        let king_square =
+            Square::from_index(board.get_bitboard(white, King).trailing_zeros() as u8);
+        let friendly_pieces = if white { board.white } else { board.black };
+
+        let horizontal_attacks = self
+            .lookup
+            .possible_rook_moves(king_square, board.all_pieces())
+            & !friendly_pieces;
+        if horizontal_attacks & (board.rooks | board.queens) != 0 {
+            return true;
+        }
+
+        let diagonal_attacks = self
+            .lookup
+            .possible_bishop_moves(king_square, board.all_pieces())
+            & !friendly_pieces;
+        if diagonal_attacks & (board.bishops | board.queens) != 0 {
+            return true;
+        }
+
+        let knight_attacks = self
+            .lookup
+            .possible_knight_moves(king_square)
+            & board.get_bitboard(!white, Knight);
+        if knight_attacks != 0 {
+            return true;
+        }
+
+        let king_attacks = self
+            .lookup
+            .possible_king_moves(king_square)
+            & board.get_bitboard(!white, King);
+        if king_attacks != 0 {
+            return true;
+        }
+
+        let final_rank = if white { 7 } else { 0 };
+        if king_square.rank() != final_rank {
+            let mut pawn_attacks:u64 = 0;
+            let backwards = if white { king_square.north(1) } else { king_square.south(1) };
+            if king_square.file() != 0 {
+                pawn_attacks |= backwards.west(1).mask();
+            }
+            if king_square.file() != 7 {
+                pawn_attacks |= backwards.east(1).mask();
+            }
+            if pawn_attacks & board.get_bitboard(!white, Pawn) != 0 {
+                return true;
+            }
+        }
+
+        false
     }
 
     fn get_indices_of_bits(bits: u64) -> Vec<u8> {
@@ -226,5 +276,34 @@ mod tests {
         let moves = 4462742033;
         let squares = MoveGenerator::get_indices_of_bits(moves);
         assert_eq!(squares, vec![0, 4, 9, 11, 25, 27, 32]);
+    }
+
+    #[test]
+    fn test_king_in_check() {
+        let move_generator = MoveGenerator::new();
+        // Starting board
+        let board = Board::starting();
+        assert!(!move_generator.king_in_check(&board, true));
+        assert!(!move_generator.king_in_check(&board, false));
+        // Black rook checks white king
+        let board = Board::from_fen("4k3/8/8/4r3/8/8/8/4K3 w - - 0 1");
+        assert!(move_generator.king_in_check(&board, true));
+        assert!(!move_generator.king_in_check(&board, false));
+        // White pawn blocks black rook
+        let board = Board::from_fen("4k3/8/8/4r3/8/4P3/8/4K3 w - - 0 1");
+        assert!(!move_generator.king_in_check(&board, true));
+        assert!(!move_generator.king_in_check(&board, false));
+        // White queen checks black king
+        let board = Board::from_fen("4k3/8/8/8/8/4Q3/8/4K3 w - - 0 1");
+        assert!(!move_generator.king_in_check(&board, true));
+        assert!(move_generator.king_in_check(&board, false));
+        // Black pawn blocks white queen
+        let board = Board::from_fen("4k3/8/4p3/8/8/4Q3/8/4K3 w - - 0 1");
+        assert!(!move_generator.king_in_check(&board, true));
+        assert!(!move_generator.king_in_check(&board, false));
+        // White pawn checks black king
+        let board = Board::from_fen("4k3/5P2/8/8/8/8/8/4K3 w - - 0 1");
+        assert!(!move_generator.king_in_check(&board, true));
+        assert!(move_generator.king_in_check(&board, false));
     }
 }
