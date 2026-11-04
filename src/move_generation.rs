@@ -393,12 +393,12 @@ mod tests {
         depth: usize,
         divide: bool,
     ) -> usize {
-        if depth == 0 {
-            return 1;
-        }
         let moves = move_generator.legal_moves(board);
         if moves.is_empty() {
             return 0;
+        }
+        if depth == 1 {
+            return moves.len();
         }
         let mut total_moves = 0;
         for mov in moves {
