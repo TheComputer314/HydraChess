@@ -131,7 +131,7 @@ impl fmt::Display for Board {
         write!(f, " ")?;
 
         if let Some(target) = self.en_passant_target() {
-            write!(f, "{:?}", to_name(target))?;
+            write!(f, "{}", to_name(target))?;
         } else {
             write!(f, "-")?;
         }
