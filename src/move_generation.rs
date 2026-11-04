@@ -108,7 +108,22 @@ impl MoveGenerator {
             }
         } else {
             // Only if we're not in check are we allowed to castle
-            // TODO: Handle castling
+            let kingside_castle_blocker_mask = if white { 0x60 } else { 0x60 << 56 };
+            if board.kingside_castling_available(white) // If kingside castling available
+                && board.all_pieces() & kingside_castle_blocker_mask == 0 // And no pieces blocking it
+                // And no pieces attacking the squares between the king and the rook
+                && king_danger_mask & kingside_castle_blocker_mask == 0
+            {
+                moves.push(Move::kingside_castle(white));
+            }
+            let queenside_castle_blocker_mask = if white { 0xe } else { 0xe << 56 };
+            if board.queenside_castling_available(white) // If queenside castling available
+                && board.all_pieces() & queenside_castle_blocker_mask == 0 // And no pieces blocking it
+                // And no pieces attacking the squares between the king and the rook
+                && king_danger_mask & queenside_castle_blocker_mask == 0
+            {
+                moves.push(Move::queenside_castle(white));
+            }
         }
 
         // Calculate pin rays
@@ -125,7 +140,7 @@ impl MoveGenerator {
         for i in Self::get_indices_of_bits(enemy_pieces & board.bishops & king_bishop_mask) {
             let attack_mask = self.lookup.possible_bishop_moves(i, enemy_pieces);
             let ray = attack_mask & king_bishop_mask;
-            if ray != 0 && (ray & friendly_pieces).count_ones() == 1{
+            if ray != 0 && (ray & friendly_pieces).count_ones() == 1 {
                 diagonal_pin_rays.push(ray | (1 << i));
             }
         }
@@ -148,33 +163,80 @@ impl MoveGenerator {
         'friendly_piece_loop: for i in Self::get_indices_of_bits(friendly_pieces & !king_mask) {
             let mask = 1 << i;
             if board.pawns & mask != 0 {
-                let final_rank = if white { 7 } else { 0 };
+                let mut move_mask = u64::MAX;
+                for ray in &horizontal_pin_rays {
+                    if ray & mask != 0 {
+                        move_mask = *ray;
+                        break;
+                    }
+                }
+
                 let push_square = if white { i + 8 } else { i - 8 };
                 let push_mask = 1 << push_square;
-                if push_mask & block_mask & !friendly_pieces != 0 {
-                    if push_square / 8 != final_rank {
-                        moves.push(Move::regular(i, push_square));
-                    } else {
-                        moves.push(Move::pawn_promotion(i, push_square, Knight));
-                        moves.push(Move::pawn_promotion(i, push_square, Bishop));
-                        moves.push(Move::pawn_promotion(i, push_square, Rook));
-                        moves.push(Move::pawn_promotion(i, push_square, Queen));
+                if push_mask & !board.all_pieces() != 0 {
+                    if push_mask & move_mask & block_mask != 0 {
+                        let final_rank = if white { 7 } else { 0 };
+                        if push_square / 8 == final_rank {
+                            moves.push(Move::pawn_promotion(i, push_square, Knight));
+                            moves.push(Move::pawn_promotion(i, push_square, Bishop));
+                            moves.push(Move::pawn_promotion(i, push_square, Rook));
+                            moves.push(Move::pawn_promotion(i, push_square, Queen));
+                        } else {
+                            moves.push(Move::regular(i, push_square));
+                        }
+                    }
+                    let starting_rank = if white { 1 } else { 6 };
+                    if i / 8 == starting_rank {
+                        // Double pawn push
+                        let double_push_square = if white { i + 16 } else { i - 16 };
+                        let double_push_mask = 1 << double_push_square;
+                        if double_push_mask & move_mask & block_mask & !board.all_pieces() != 0 {
+                            moves.push(Move::double_pawn_push(i));
+                        }
                     }
                 }
 
-                let start_rank = if white { 1 } else { 6 };
-                if i / 8 == start_rank {
-                    let double_push_mask = 1 << (if white { i + 16 } else { i - 16 });
-                    if push_mask & !board.all_pieces() != 0
-                        && double_push_mask & block_mask & !board.all_pieces() != 0
-                    {
-                        moves.push(Move::double_pawn_push(i));
+                // If horizontally pinned, cannot capture
+                if move_mask == u64::MAX {
+                    let mut move_mask = u64::MAX;
+                    for ray in &diagonal_pin_rays {
+                        if ray & mask != 0 {
+                            move_mask = *ray;
+                            break;
+                        }
+                    }
+
+                    if i % 8 > 0 {
+                        let left_capture_square = push_square - 1;
+                        let left_capture_mask = 1 << left_capture_square;
+                        if left_capture_mask & move_mask & block_mask & enemy_pieces != 0 {
+                            moves.push(Move::regular(i, left_capture_square));
+                        }
+                    }
+                    if i % 8 < 7 {
+                        let right_capture_square = push_square + 1;
+                        let right_capture_mask = 1 << right_capture_square;
+                        if right_capture_mask & move_mask & block_mask & enemy_pieces != 0 {
+                            moves.push(Move::regular(i, right_capture_square));
+                        }
+                    }
+
+                    if let Some(target) = board.en_passant_target() {
+                        let target_file = target % 8;
+                        let target_rank = target / 8;
+                        if i / 8 == target_rank {
+                            // If target is to the right of the current square
+                            if target_file != 0 && i % 8 == target_file - 1 {
+                                moves.push(Move::right_en_passant(i));
+                            } else if target_file != 7 && i % 8 == target_file + 1 {
+                                moves.push(Move::left_en_passant(i));
+                            }
+                        }
+                        // TODO: Handle en passant discovered check
                     }
                 }
-
-                // TODO: Handle captures and en passant
             } else if board.knights & mask != 0 {
-                // If pinned by a ray, the knight cannnot move
+                // If pinned by a ray, the knight cannot move
                 for ray in &horizontal_pin_rays {
                     if ray & mask != 0 {
                         continue 'friendly_piece_loop;
@@ -204,7 +266,7 @@ impl MoveGenerator {
                 for ray in &diagonal_pin_rays {
                     if ray & mask != 0 {
                         move_mask = *ray;
-                        break
+                        break;
                     }
                 }
 
@@ -222,12 +284,12 @@ impl MoveGenerator {
                         continue 'friendly_piece_loop;
                     }
                 }
-
+                // If pinned by a horizontal ray, the rook can only move along the ray
                 let mut move_mask = u64::MAX;
                 for ray in &horizontal_pin_rays {
                     if ray & mask != 0 {
                         move_mask = *ray;
-                        break
+                        break;
                     }
                 }
 
@@ -243,14 +305,14 @@ impl MoveGenerator {
                 for ray in &diagonal_pin_rays {
                     if ray & mask != 0 {
                         move_mask = *ray;
-                        break
+                        break;
                     }
                 }
                 if move_mask == u64::MAX {
                     for ray in &horizontal_pin_rays {
                         if ray & mask != 0 {
                             move_mask = *ray;
-                            break
+                            break;
                         }
                     }
                 }
@@ -307,6 +369,17 @@ mod tests {
         let mut board = Board::from_fen("8/8/8/5k2/8/8/KB2B2r/8 w - - 0 1");
         let moves = move_generator.legal_moves(&mut board);
         assert_eq!(moves.len(), 22);
+    }
+
+    #[test]
+    fn test_pawn_pin() {
+        let move_generator = MoveGenerator::new();
+        let mut board = Board::from_fen("8/8/8/8/8/8/K1P1r3/8 w - - 0 1");
+        let moves = move_generator.legal_moves(&mut board);
+        assert_eq!(moves.len(), 5);
+        let mut board = Board::from_fen("8/8/8/8/8/K3r3/2P5/8 w - - 0 1");
+        let moves = move_generator.legal_moves(&mut board);
+        assert_eq!(moves.len(), 5);
     }
 
     #[test]
