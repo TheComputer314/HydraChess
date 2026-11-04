@@ -1,4 +1,4 @@
-use crate::search::move_generation::mov::squares::*;
+use crate::move_generation::mov::squares::*;
 use std::fmt;
 use std::fmt::Formatter;
 

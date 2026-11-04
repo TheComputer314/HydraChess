@@ -1,5 +1,5 @@
-use crate::search::move_generation::mov::PieceType::{Bishop, King, Knight, Pawn, Queen, Rook};
-use crate::search::move_generation::mov::squares::*;
+use crate::move_generation::mov::PieceType::{Bishop, King, Knight, Pawn, Queen, Rook};
+use crate::move_generation::mov::squares::*;
 use board_state::Board;
 use mov::Move;
 use move_lookup::MoveLookup;

@@ -1,4 +1,3 @@
-use crate::search::move_generation::mov::squares;
 use core::arch::x86_64::_pext_u64;
 
 pub struct MoveLookup {
@@ -261,8 +260,8 @@ impl MoveLookup {
 
 #[cfg(test)]
 mod tests {
-    use crate::search::move_generation::mov::squares::{A1, C3, G3, H4, H8};
-    use crate::search::move_generation::move_lookup::MoveLookup;
+    use crate::move_generation::mov::squares::{A1, C3, G3, H4, H8};
+    use crate::move_generation::move_lookup::MoveLookup;
     use std::time::Instant;
 
     #[test]
