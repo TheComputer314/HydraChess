@@ -146,6 +146,39 @@ impl MoveGenerator {
                     self.lookup.possible_king_moves(start_square),
                     friendly_pieces,
                 );
+
+                let kingside_castle_blocker_mask = if white { 0x60 } else { 0x60 << 56 };
+                if board.kingside_castling_available(white) // If kingside castling available
+                        && board.all_pieces() & kingside_castle_blocker_mask == 0 // And no pieces blocking it
+                        // And king is not currently in check
+                        && !self.king_in_check(board, white)
+                {
+                    // A bit disgusting: Redoing king-in-check on the move to the F file
+                    // TODO: Figure out a way to combine the normal move checks with the castling checks
+                    let right_mov = &Move::regular(start_square, east(start_square));
+                    let (flags, capture) = board.make_move(right_mov);
+                    let castling_ok = !self.king_in_check(board, white);
+                    board.unmake_move(right_mov, flags, &capture);
+                    if castling_ok {
+                        self.try_move(board, white, &mut moves, &Move::kingside_castle(white))
+                    }
+                }
+                let queenside_castle_blocker_mask = if white { 0xe } else { 0xe << 56 };
+                if board.queenside_castling_available(white) // If queenside castling available
+                        && board.all_pieces() & queenside_castle_blocker_mask == 0 // And no pieces blocking it
+                        // And king is not currently in check
+                        && !self.king_in_check(board, white)
+                {
+                    // A bit disgusting: Redoing king-in-check on the move to the C file
+                    // TODO: Figure out a way to combine the normal move checks with the castling checks
+                    let left_mov = &Move::regular(start_square, west(start_square));
+                    let (flags, capture) = board.make_move(left_mov);
+                    let castling_ok = !self.king_in_check(board, white);
+                    board.unmake_move(left_mov, flags, &capture);
+                    if castling_ok {
+                        self.try_move(board, white, &mut moves, &Move::queenside_castle(white))
+                    }
+                }
             } else {
                 panic!("Invalid piece type");
             }
@@ -201,8 +234,7 @@ impl MoveGenerator {
     }
 
     pub fn king_in_check(&self, board: &Board, white: bool) -> bool {
-        let king_square =
-            board.get_bitboard(white, King).trailing_zeros() as u8;
+        let king_square = board.get_bitboard(white, King).trailing_zeros() as u8;
         let friendly_pieces = if white { board.white } else { board.black };
 
         let horizontal_attacks = self
@@ -321,6 +353,22 @@ mod tests {
         );
     }
 
+    #[test]
+    fn perft_kiwipete() {
+        test_perft(
+            Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"),
+            &[48, 2039, 97862, 4085603],
+        )
+    }
+
+    #[test]
+    fn perft_kiwipete_e5_c6() {
+        test_perft(
+            Board::from_fen("r3k2r/p1ppqpb1/bnN1pnp1/3P4/1p2P3/2N2Q1p/PPPBBPPP/R3K2R b KQkq - 1 1"),
+            &[41, 2027],
+        )
+    }
+
     fn test_perft(starting_board: Board, expected: &[usize]) {
         let move_generator = MoveGenerator::new();
         let mut board = starting_board.clone();
@@ -349,6 +397,9 @@ mod tests {
             return 1;
         }
         let moves = move_generator.legal_moves(board);
+        if moves.is_empty() {
+            return 0;
+        }
         let mut total_moves = 0;
         for mov in moves {
             let (last_flag, capture) = board.make_move(&mov);

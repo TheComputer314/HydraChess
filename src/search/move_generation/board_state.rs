@@ -275,6 +275,22 @@ impl Board {
     pub fn get_castling_rights(&self) -> u8 {
         ((self.flags >> 6) & 0b1111) as u8
     }
+    
+    pub fn kingside_castling_available(&self, white: bool) -> bool {
+        if white {
+            (self.flags >> 6) & 0b1 == 1
+        } else {
+            (self.flags >> 8) & 0b1 == 1
+        }
+    }
+
+    pub fn queenside_castling_available(&self, white: bool) -> bool {
+        if white {
+            (self.flags >> 7) & 0b1 == 1
+        } else {
+            (self.flags >> 9) & 0b1 == 1
+        }
+    }
 
     pub fn white_to_move(&self) -> bool {
         (self.flags >> 10) & 0b1 == 1
