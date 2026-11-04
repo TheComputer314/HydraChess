@@ -34,7 +34,19 @@ impl MoveGenerator {
         for i in MoveGenerator::get_indices_of_bits(enemy_pieces) {
             let mask = 1 << i;
             if board.pawns & mask != 0 {
-                // TODO
+                let mut pawn_danger_mask = 0;
+                let forward = if white { i + 8 } else { i-8 };
+                if i % 8 != 0 {
+                    pawn_danger_mask |= 1 << (forward - 1);
+                }
+                if i % 8 != 7 {
+                    pawn_danger_mask |= 1 << (forward + 1);
+                }
+                if king_mask & pawn_danger_mask != 0 {
+                    checkers += 1;
+                    checker_index = i;
+                }
+                king_danger_mask |= pawn_danger_mask;
             } else if board.knights & mask != 0 {
                 let possible_knight_moves = self.lookup.possible_knight_moves(i);
                 if king_mask & possible_knight_moves != 0 {
