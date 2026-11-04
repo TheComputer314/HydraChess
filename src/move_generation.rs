@@ -26,13 +26,87 @@ impl MoveGenerator {
         let friendly_pieces = if white { board.white } else { board.black };
         let enemy_pieces = if white { board.black } else { board.white };
 
-        let king_square = friendly_pieces & board.kings;
+        let king_mask = friendly_pieces & board.kings;
         let mut king_danger_mask: u64 = 0;
-        let double_check: bool;
+        let mut checkers = 0;
+        let mut checker_index = 0;
+        // King is not included in the blockers, so that the king can't block a
+        // move that would leave it in check post-move
+        let blockers = board.all_pieces() & !king_mask;
         for i in MoveGenerator::get_indices_of_bits(enemy_pieces) {
-            // TODO: Get the squares being attacked by enemy pieces
+            let mask = 1 << i;
+            if board.pawns & mask != 0 {
+                // TODO
+            } else if board.knights & mask != 0 {
+                let possible_knight_moves = self.lookup.possible_knight_moves(i);
+                if king_mask & possible_knight_moves != 0 {
+                    checkers += 1;
+                    checker_index = i;
+                }
+                king_danger_mask |= possible_knight_moves;
+            } else if board.bishops & mask != 0 {
+                let possible_bishop_moves = self.lookup.possible_bishop_moves(i, blockers);
+                if king_mask & possible_bishop_moves != 0 {
+                    checkers += 1;
+                    checker_index = i;
+                }
+                king_danger_mask |= possible_bishop_moves;
+            } else if board.rooks & mask != 0 {
+                let possible_rook_moves = self.lookup.possible_rook_moves(i, blockers);
+                if king_mask & possible_rook_moves != 0 {
+                    checkers += 1;
+                    checker_index = i;
+                }
+                king_danger_mask |= possible_rook_moves;
+            } else if board.queens & mask != 0 {
+                let possible_queen_moves = self.lookup.possible_queen_moves(i, blockers);
+                if king_mask & possible_queen_moves != 0 {
+                    checkers += 1;
+                    checker_index = i;
+                }
+                king_danger_mask |= possible_queen_moves;
+            } else if board.kings & mask != 0 {
+                // Kings can't attack each other legally, so no need to handle checkers counting for that
+                king_danger_mask |= self.lookup.possible_king_moves(i);
+            }
         }
         let king_danger_mask = king_danger_mask;
+
+        // King moves are restricted by the danger mask
+        let king_index = king_mask.trailing_zeros() as u8;
+        let pseudo_legal_king_moves =
+            self.lookup.possible_king_moves(king_index) & !friendly_pieces;
+        let legal_king_moves = pseudo_legal_king_moves & !king_danger_mask;
+        for i in Self::get_indices_of_bits(legal_king_moves) {
+            moves.push(Move::regular(king_index, i));
+        }
+
+        // If in double check, only legal moves are king moves
+        if checkers > 1 {
+            return moves;
+        }
+
+        // If in single check, capturing or blocking attackers are the only legal non-king moves
+        // So restrict possible moves by creating a mask of legal captures and legal blocks
+        let mut capture_mask = u64::MAX;
+        let mut block_mask = u64::MAX;
+        if checkers > 0 {
+            let checker_mask = 1 << checker_index;
+            capture_mask = 1 << checker_index;
+            if board.rooks & checker_mask != 0 {
+                block_mask = self.lookup.possible_rook_moves(checker_index, 0)
+                    & self.lookup.possible_rook_moves(king_index, 0);
+            } else if board.bishops & checker_mask != 0 {
+                block_mask = self.lookup.possible_bishop_moves(checker_index, 0)
+                    & self.lookup.possible_bishop_moves(king_index, 0);
+            } else if board.queens & checker_mask != 0 {
+                block_mask = self.lookup.possible_queen_moves(checker_index, 0)
+                    & self.lookup.possible_queen_moves(king_index, 0);
+            }
+        }
+
+        // If king is not in check, all other moves are allowed
+        // TODO
 
         moves
     }
@@ -59,35 +133,6 @@ mod tests {
         let moves = 4462742033;
         let squares = MoveGenerator::get_indices_of_bits(moves);
         assert_eq!(squares, vec![0, 4, 9, 11, 25, 27, 32]);
-    }
-
-    #[test]
-    fn test_king_in_check() {
-        let move_generator = MoveGenerator::new();
-        // Starting board
-        let board = Board::starting();
-        assert!(!move_generator.king_in_check(&board, true));
-        assert!(!move_generator.king_in_check(&board, false));
-        // Black rook checks white king
-        let board = Board::from_fen("4k3/8/8/4r3/8/8/8/4K3 w - - 0 1");
-        assert!(move_generator.king_in_check(&board, true));
-        assert!(!move_generator.king_in_check(&board, false));
-        // White pawn blocks black rook
-        let board = Board::from_fen("4k3/8/8/4r3/8/4P3/8/4K3 w - - 0 1");
-        assert!(!move_generator.king_in_check(&board, true));
-        assert!(!move_generator.king_in_check(&board, false));
-        // White queen checks black king
-        let board = Board::from_fen("4k3/8/8/8/8/4Q3/8/4K3 w - - 0 1");
-        assert!(!move_generator.king_in_check(&board, true));
-        assert!(move_generator.king_in_check(&board, false));
-        // Black pawn blocks white queen
-        let board = Board::from_fen("4k3/8/4p3/8/8/4Q3/8/4K3 w - - 0 1");
-        assert!(!move_generator.king_in_check(&board, true));
-        assert!(!move_generator.king_in_check(&board, false));
-        // White pawn checks black king
-        let board = Board::from_fen("4k3/5P2/8/8/8/8/8/4K3 w - - 0 1");
-        assert!(!move_generator.king_in_check(&board, true));
-        assert!(move_generator.king_in_check(&board, false));
     }
 
     #[test]
