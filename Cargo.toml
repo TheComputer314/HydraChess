@@ -1,5 +1,5 @@
 [build]
-rustflags = ["-C", "target_cpu=native", "-Clink-arg=-Wl,--no-rosegment"]
+rustflags = ["-C", "target_cpu=native", "link-arg=-fuse-ld=mold", "-Clink-arg=-Wl,--no-rosegment"]
 
 [package]
 name = "HydraChess"
