@@ -106,7 +106,8 @@ impl MoveGenerator {
                 if checker_mask & king_rook_mask != 0 {
                     block_mask = self.lookup.possible_rook_moves(checker_index, 0) & king_rook_mask;
                 } else if checker_mask & king_bishop_mask != 0 {
-                    block_mask = self.lookup.possible_bishop_moves(checker_index, 0) & king_bishop_mask;
+                    block_mask =
+                        self.lookup.possible_bishop_moves(checker_index, 0) & king_bishop_mask;
                 }
             }
         } else {
@@ -201,7 +202,12 @@ impl MoveGenerator {
                             // Double pawn push
                             let double_push_square = if white { i + 16 } else { i - 16 };
                             let double_push_mask = 1 << double_push_square;
-                            if double_push_mask & horizontal_pin_mask & block_mask & !board.all_pieces() != 0 {
+                            if double_push_mask
+                                & horizontal_pin_mask
+                                & block_mask
+                                & !board.all_pieces()
+                                != 0
+                            {
                                 moves.push(Move::double_pawn_push(i));
                             }
                         }
@@ -228,7 +234,16 @@ impl MoveGenerator {
                     if let Some(target) = board.en_passant_target() {
                         let target_file = target % 8;
                         let target_rank = target / 8;
-                        if i / 8 == target_rank {
+                        if i / 8 == target_rank // If pawn is at the same rank as the target
+                            && (king_index / 8 != target_rank // And either the king is not on the same rank
+                                || (self.lookup.possible_rook_moves(
+                                    king_index,
+                            // Or excluding this pawn and the target from blockers,
+                                    board.all_pieces() & !mask & !(1 << target),
+                                ) & 0xFF << (target_rank * 8)) // and only looking at horizontal attacks
+                            // Is there a horizontal attack from a rook or queen
+                                   & (enemy_pieces & (board.rooks | board.queens)) == 0)
+                        {
                             // If target is to the right of the current square
                             if target_file != 0 && i % 8 == target_file - 1 {
                                 moves.push(Move::right_en_passant(i));
@@ -236,11 +251,8 @@ impl MoveGenerator {
                                 moves.push(Move::left_en_passant(i));
                             }
                         }
-                        // TODO: Handle en passant discovered check
                     }
                 }
-
-
             } else if board.knights & mask != 0 {
                 // If pinned by a ray, the knight cannot move
                 for ray in &horizontal_pin_rays {
@@ -398,7 +410,10 @@ mod tests {
 
     #[test]
     fn perft_fools() {
-        test_perft(Board::from_fen("rnbqkbnr/ppppp1pp/5p2/7Q/8/4P3/PPPP1PPP/RNB1KBNR b KQkq - 1 1"), &[1])
+        test_perft(
+            Board::from_fen("rnbqkbnr/ppppp1pp/5p2/7Q/8/4P3/PPPP1PPP/RNB1KBNR b KQkq - 1 1"),
+            &[1],
+        )
     }
 
     #[test]
