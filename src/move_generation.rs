@@ -35,12 +35,12 @@ impl MoveGenerator {
             let mask = 1 << i;
             if board.pawns & mask != 0 {
                 let mut pawn_danger_mask = 0;
-                let forward = if white { i + 8 } else { i - 8 };
+                let backwards = if white { i - 8 } else { i + 8 };
                 if i % 8 != 0 {
-                    pawn_danger_mask |= 1 << (forward - 1);
+                    pawn_danger_mask |= 1 << (backwards - 1);
                 }
                 if i % 8 != 7 {
-                    pawn_danger_mask |= 1 << (forward + 1);
+                    pawn_danger_mask |= 1 << (backwards + 1);
                 }
                 if king_mask & pawn_danger_mask != 0 {
                     checkers += 1;
@@ -111,15 +111,15 @@ impl MoveGenerator {
             let checker_mask = 1 << checker_index;
             capture_mask = 1 << checker_index;
             if board.rooks & checker_mask != 0 {
-                block_mask = self.lookup.possible_rook_moves(checker_index, 0) & king_rook_mask;
+                block_mask = self.lookup.possible_rook_moves(checker_index, king_mask) & king_rook_mask;
             } else if board.bishops & checker_mask != 0 {
-                block_mask = self.lookup.possible_bishop_moves(checker_index, 0) & king_bishop_mask;
+                block_mask = self.lookup.possible_bishop_moves(checker_index, king_mask) & king_bishop_mask;
             } else if board.queens & checker_mask != 0 {
                 if checker_mask & king_rook_mask != 0 {
-                    block_mask = self.lookup.possible_rook_moves(checker_index, 0) & king_rook_mask;
+                    block_mask = self.lookup.possible_rook_moves(checker_index, king_mask) & king_rook_mask;
                 } else if checker_mask & king_bishop_mask != 0 {
                     block_mask =
-                        self.lookup.possible_bishop_moves(checker_index, 0) & king_bishop_mask;
+                        self.lookup.possible_bishop_moves(checker_index, king_mask) & king_bishop_mask;
                 }
             } else if board.pawns & checker_mask != 0 || board.knights & checker_mask != 0 {
                 block_mask = 0;
@@ -152,8 +152,10 @@ impl MoveGenerator {
         let attacking_cardinal_sliders =
             king_rook_mask & enemy_pieces & (board.rooks | board.queens);
         for i in Self::get_indices_of_bits(attacking_cardinal_sliders) {
-            let attacked_squares =
-                self.lookup.possible_rook_moves(i, !king_rook_mask) & king_rook_mask;
+            let attacked_squares = self
+                .lookup
+                .possible_rook_moves(i, !king_rook_mask | king_mask)
+                & king_rook_mask;
             if (attacked_squares & friendly_pieces).count_ones() == 1 {
                 cardinal_pin_rays.push(attacked_squares | (1 << i));
             }
@@ -161,8 +163,10 @@ impl MoveGenerator {
         let attacking_diagonal_sliders =
             king_bishop_mask & enemy_pieces & (board.bishops | board.queens);
         for i in Self::get_indices_of_bits(attacking_diagonal_sliders) {
-            let attacked_squares =
-                self.lookup.possible_bishop_moves(i, !king_bishop_mask) & king_bishop_mask;
+            let attacked_squares = self
+                .lookup
+                .possible_bishop_moves(i, !king_bishop_mask | king_mask)
+                & king_bishop_mask;
             if (attacked_squares & friendly_pieces).count_ones() == 1 {
                 diagonal_pin_rays.push(attacked_squares | (1 << i));
             }
@@ -451,7 +455,39 @@ mod tests {
     fn perft_starting_c2c3_d7d5_d1a4() {
         test_perft(
             Board::from_fen("rnbqkbnr/ppp1pppp/8/3p4/Q7/2P5/PP1PPPPP/RNB1KBNR b KQkq - 1 2"),
-            &[6, 206]
+            &[6, 206],
+        )
+    }
+
+    #[test]
+    fn perft_starting_d2d4() {
+        test_perft(
+            Board::from_fen("rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1"),
+            &[20, 560, 12435, 361790],
+        )
+    }
+
+    #[test]
+    fn perft_starting_d2d4_c7c5_e1d2() {
+        test_perft(
+            Board::from_fen("rnbqkbnr/pp1ppppp/8/2p5/3P4/8/PPPKPPPP/RNBQ1BNR b kq - 1 2"),
+            &[23, 548],
+        )
+    }
+
+    #[test]
+    fn perft_starting_d2d4_c7c5_e1d2_d8a5_c5c4() {
+        test_perft(
+            Board::from_fen("rnbqkbnr/pp1ppppp/8/8/2pP4/8/PPPKPPPP/RNBQ1BNR w kq - 0 3"),
+            &[22],
+        )
+    }
+
+    #[test]
+    fn perft_starting_d2d4_c7c5_e1d2_d8a5() {
+        test_perft(
+            Board::from_fen("rnb1kbnr/pp1ppppp/8/q1p5/3P4/8/PPPKPPPP/RNBQ1BNR w kq - 2 3"),
+            &[5],
         )
     }
 
@@ -469,10 +505,18 @@ mod tests {
     }
 
     #[test]
-    fn perft_kiwipete_e5_c6() {
+    fn perft_kiwipete_e5c6() {
         test_perft(
             Board::from_fen("r3k2r/p1ppqpb1/bnN1pnp1/3P4/1p2P3/2N2Q1p/PPPBBPPP/R3K2R b KQkq - 1 1"),
             &[41, 2027],
+        )
+    }
+
+    #[test]
+    fn perft_kiwipete_e5d7() {
+        test_perft(
+            Board::from_fen("r3k2r/p1pNqpb1/bn2pnp1/3P4/1p2P3/2N2Q1p/PPPBBPPP/R3K2R b KQkq - 0 1"),
+            &[45],
         )
     }
 
