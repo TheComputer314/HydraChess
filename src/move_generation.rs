@@ -25,12 +25,14 @@ impl MoveGenerator {
         let enemy_pieces = if white { board.black } else { board.white };
 
         let king_mask = friendly_pieces & board.kings;
-        let mut king_danger_mask: u64 = 0;
-        let mut checkers = 0;
-        let mut checker_index = 0;
         // King is not included in the blockers, so that the king can't block a
         // move that would leave it in check post-move
         let blockers = board.all_pieces() & !king_mask;
+        // For every enemy piece, create a mask of the squares it attacks
+        // If the king is currently sitting in an attacked square, it is in check
+        let mut king_danger_mask: u64 = 0;
+        let mut checkers = 0;
+        let mut checker_index = 0;
         for i in MoveGenerator::get_indices_of_bits(enemy_pieces) {
             let mask = 1 << i;
             if board.pawns & mask != 0 {
@@ -80,9 +82,6 @@ impl MoveGenerator {
                 king_danger_mask |= self.lookup.possible_king_moves(i);
             }
         }
-        let checkers = checkers;
-        let checker_index = checker_index;
-        let king_danger_mask = king_danger_mask;
 
         let mut moves = Vec::new();
 
@@ -100,6 +99,7 @@ impl MoveGenerator {
             return moves;
         }
 
+        // Mask of what enemy pieces can attack the king
         let king_rook_mask = self.lookup.possible_rook_moves(king_index, enemy_pieces);
         let king_bishop_mask = self.lookup.possible_bishop_moves(king_index, enemy_pieces);
 
@@ -109,7 +109,7 @@ impl MoveGenerator {
         let mut block_mask = u64::MAX;
         if checkers > 0 {
             let checker_mask = 1 << checker_index;
-            capture_mask = 1 << checker_index;
+            capture_mask = checker_mask;
             if board.rooks & checker_mask != 0 {
                 block_mask =
                     self.lookup.possible_rook_moves(checker_index, king_mask) & king_rook_mask;
@@ -158,6 +158,8 @@ impl MoveGenerator {
         for i in Self::get_indices_of_bits(attacking_cardinal_sliders) {
             let attacked_squares = self
                 .lookup
+                // We invert the king rook mask to block any moves that are not on the ray between the king and the attacker
+                // But also add the king mask to block the ray from going past the king
                 .possible_rook_moves(i, !king_rook_mask | king_mask)
                 & king_rook_mask;
             if (attacked_squares & friendly_pieces).count_ones() == 1 {
@@ -195,6 +197,7 @@ impl MoveGenerator {
                     }
                 }
 
+                // We can only push if we're not pinned diagonally
                 if diagonal_pin_mask == u64::MAX {
                     let push_square = if white { i + 8 } else { i - 8 };
                     let push_mask = 1 << push_square;
@@ -227,6 +230,7 @@ impl MoveGenerator {
                     }
                 }
 
+                // We can only push if we're not pinned cardinally
                 if cardinal_pin_mask == u64::MAX {
                     let push_square = if white { i + 8 } else { i - 8 };
                     let final_rank = if white { 7 } else { 0 };
@@ -261,6 +265,7 @@ impl MoveGenerator {
                         }
                     }
 
+                    // If en passant is possible
                     if let Some(target) = board.en_passant_target() {
                         let target_file = target % 8;
                         let target_rank = target / 8;
@@ -268,7 +273,7 @@ impl MoveGenerator {
                             && (king_index / 8 != target_rank // And either the king is not on the same rank
                                 || (self.lookup.possible_rook_moves(
                                     king_index,
-                            // Or excluding this pawn and the target from blockers,
+                            // Or: excluding this pawn and the target from blockers,
                                     board.all_pieces() & !mask & !(1 << target),
                                 ) & 0xFF << (target_rank * 8)) // and only looking at horizontal attacks
                             // Is there a horizontal attack from a rook or queen
@@ -349,6 +354,7 @@ impl MoveGenerator {
                     moves.push(Move::regular(i, j));
                 }
             } else if board.queens & mask != 0 {
+                // If pinned by a ray, the queen can only move along that ray
                 let mut move_mask = u64::MAX;
                 for ray in &diagonal_pin_rays {
                     if ray & mask != 0 {
@@ -356,6 +362,7 @@ impl MoveGenerator {
                         break;
                     }
                 }
+                // No need to check cardinal_pin_rays if we already have a move_mask from the diagonal pins check
                 if move_mask == u64::MAX {
                     for ray in &cardinal_pin_rays {
                         if ray & mask != 0 {
