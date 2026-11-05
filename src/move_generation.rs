@@ -35,7 +35,7 @@ impl MoveGenerator {
             let mask = 1 << i;
             if board.pawns & mask != 0 {
                 let mut pawn_danger_mask = 0;
-                let forward = if white { i + 8 } else { i-8 };
+                let forward = if white { i + 8 } else { i - 8 };
                 if i % 8 != 0 {
                     pawn_danger_mask |= 1 << (forward - 1);
                 }
@@ -100,8 +100,8 @@ impl MoveGenerator {
             return moves;
         }
 
-        let king_rook_mask = self.lookup.possible_rook_moves(king_index, 0);
-        let king_bishop_mask = self.lookup.possible_bishop_moves(king_index, 0);
+        let king_rook_mask = self.lookup.possible_rook_moves(king_index, enemy_pieces);
+        let king_bishop_mask = self.lookup.possible_bishop_moves(king_index, enemy_pieces);
 
         // If in single check, capturing or blocking attackers are the only legal non-king moves
         // So restrict possible moves by creating a mask of legal captures and legal blocks
@@ -121,6 +121,8 @@ impl MoveGenerator {
                     block_mask =
                         self.lookup.possible_bishop_moves(checker_index, 0) & king_bishop_mask;
                 }
+            } else if board.pawns & checker_mask != 0 || board.knights & checker_mask != 0 {
+                block_mask = 0;
             }
         } else {
             // Only if we're not in check are we allowed to castle
@@ -144,34 +146,25 @@ impl MoveGenerator {
 
         // Calculate pin rays
         // A piece is pinned if it is the only piece on the ray between a sliding attacker and the king
-        let mut horizontal_pin_rays = Vec::new();
-        for i in Self::get_indices_of_bits(enemy_pieces & board.rooks & king_rook_mask) {
-            let attack_mask = self.lookup.possible_rook_moves(i, enemy_pieces);
-            let ray = attack_mask & king_rook_mask;
-            if ray != 0 && (ray & friendly_pieces).count_ones() == 1 {
-                horizontal_pin_rays.push(ray | (1 << i));
-            }
-        }
+        let mut cardinal_pin_rays = Vec::new();
         let mut diagonal_pin_rays = Vec::new();
-        for i in Self::get_indices_of_bits(enemy_pieces & board.bishops & king_bishop_mask) {
-            let attack_mask = self.lookup.possible_bishop_moves(i, enemy_pieces);
-            let ray = attack_mask & king_bishop_mask;
-            if ray != 0 && (ray & friendly_pieces).count_ones() == 1 {
-                diagonal_pin_rays.push(ray | (1 << i));
+
+        let attacking_cardinal_sliders =
+            king_rook_mask & enemy_pieces & (board.rooks | board.queens);
+        for i in Self::get_indices_of_bits(attacking_cardinal_sliders) {
+            let attacked_squares =
+                self.lookup.possible_rook_moves(i, !king_rook_mask) & king_rook_mask;
+            if (attacked_squares & friendly_pieces).count_ones() == 1 {
+                cardinal_pin_rays.push(attacked_squares | (1 << i));
             }
         }
-        for i in Self::get_indices_of_bits(
-            enemy_pieces & board.queens & (king_rook_mask | king_bishop_mask),
-        ) {
-            let horizontal_attack_mask = self.lookup.possible_rook_moves(i, enemy_pieces);
-            let horizontal_ray = horizontal_attack_mask & king_rook_mask;
-            if horizontal_ray != 0 && (horizontal_ray & friendly_pieces).count_ones() == 1 {
-                horizontal_pin_rays.push(horizontal_ray | (1 << i));
-            }
-            let diagonal_attack_mask = self.lookup.possible_bishop_moves(i, enemy_pieces);
-            let diagonal_ray = diagonal_attack_mask & king_bishop_mask;
-            if diagonal_ray != 0 && (diagonal_ray & friendly_pieces).count_ones() == 1 {
-                diagonal_pin_rays.push(diagonal_ray | (1 << i));
+        let attacking_diagonal_sliders =
+            king_bishop_mask & enemy_pieces & (board.bishops | board.queens);
+        for i in Self::get_indices_of_bits(attacking_diagonal_sliders) {
+            let attacked_squares =
+                self.lookup.possible_bishop_moves(i, !king_bishop_mask) & king_bishop_mask;
+            if (attacked_squares & friendly_pieces).count_ones() == 1 {
+                diagonal_pin_rays.push(attacked_squares | (1 << i));
             }
         }
 
@@ -179,10 +172,10 @@ impl MoveGenerator {
         'friendly_piece_loop: for i in Self::get_indices_of_bits(friendly_pieces & !king_mask) {
             let mask = 1 << i;
             if board.pawns & mask != 0 {
-                let mut horizontal_pin_mask = u64::MAX;
-                for ray in &horizontal_pin_rays {
+                let mut cardinal_pin_mask = u64::MAX;
+                for ray in &cardinal_pin_rays {
                     if ray & mask != 0 {
-                        horizontal_pin_mask = *ray;
+                        cardinal_pin_mask = *ray;
                         break;
                     }
                 }
@@ -198,7 +191,7 @@ impl MoveGenerator {
                     let push_square = if white { i + 8 } else { i - 8 };
                     let push_mask = 1 << push_square;
                     if push_mask & !board.all_pieces() != 0 {
-                        if push_mask & horizontal_pin_mask & block_mask != 0 {
+                        if push_mask & cardinal_pin_mask & block_mask != 0 {
                             let final_rank = if white { 7 } else { 0 };
                             if push_square / 8 == final_rank {
                                 moves.push(Move::pawn_promotion(i, push_square, Knight));
@@ -215,7 +208,7 @@ impl MoveGenerator {
                             let double_push_square = if white { i + 16 } else { i - 16 };
                             let double_push_mask = 1 << double_push_square;
                             if double_push_mask
-                                & horizontal_pin_mask
+                                & cardinal_pin_mask
                                 & block_mask
                                 & !board.all_pieces()
                                 != 0
@@ -226,19 +219,21 @@ impl MoveGenerator {
                     }
                 }
 
-                if horizontal_pin_mask == u64::MAX {
+                if cardinal_pin_mask == u64::MAX {
                     let push_square = if white { i + 8 } else { i - 8 };
                     if i % 8 > 0 {
                         let left_capture_square = push_square - 1;
                         let left_capture_mask = 1 << left_capture_square;
-                        if left_capture_mask & diagonal_pin_mask & block_mask & enemy_pieces != 0 {
+                        if left_capture_mask & diagonal_pin_mask & capture_mask & enemy_pieces != 0
+                        {
                             moves.push(Move::regular(i, left_capture_square));
                         }
                     }
                     if i % 8 < 7 {
                         let right_capture_square = push_square + 1;
                         let right_capture_mask = 1 << right_capture_square;
-                        if right_capture_mask & diagonal_pin_mask & block_mask & enemy_pieces != 0 {
+                        if right_capture_mask & diagonal_pin_mask & capture_mask & enemy_pieces != 0
+                        {
                             moves.push(Move::regular(i, right_capture_square));
                         }
                     }
@@ -267,7 +262,7 @@ impl MoveGenerator {
                 }
             } else if board.knights & mask != 0 {
                 // If pinned by a ray, the knight cannot move
-                for ray in &horizontal_pin_rays {
+                for ray in &cardinal_pin_rays {
                     if ray & mask != 0 {
                         continue 'friendly_piece_loop;
                     }
@@ -278,7 +273,7 @@ impl MoveGenerator {
                     }
                 }
 
-                let legal_end_squares = capture_mask & block_mask;
+                let legal_end_squares = capture_mask | block_mask;
                 let knight_moves =
                     self.lookup.possible_knight_moves(i) & legal_end_squares & !friendly_pieces;
                 for j in Self::get_indices_of_bits(knight_moves) {
@@ -286,7 +281,7 @@ impl MoveGenerator {
                 }
             } else if board.bishops & mask != 0 {
                 // If pinned by a horizontal ray, the bishop cannot move
-                for ray in &horizontal_pin_rays {
+                for ray in &cardinal_pin_rays {
                     if ray & mask != 0 {
                         continue 'friendly_piece_loop;
                     }
@@ -300,7 +295,7 @@ impl MoveGenerator {
                     }
                 }
 
-                let legal_end_squares = capture_mask & block_mask & move_mask;
+                let legal_end_squares = (capture_mask | block_mask) & move_mask;
                 let bishop_moves = self.lookup.possible_bishop_moves(i, board.all_pieces())
                     & legal_end_squares
                     & !friendly_pieces;
@@ -316,14 +311,14 @@ impl MoveGenerator {
                 }
                 // If pinned by a horizontal ray, the rook can only move along the ray
                 let mut move_mask = u64::MAX;
-                for ray in &horizontal_pin_rays {
+                for ray in &cardinal_pin_rays {
                     if ray & mask != 0 {
                         move_mask = *ray;
                         break;
                     }
                 }
 
-                let legal_end_squares = capture_mask & block_mask & move_mask;
+                let legal_end_squares = (capture_mask | block_mask) & move_mask;
                 let rook_moves = self.lookup.possible_rook_moves(i, board.all_pieces())
                     & legal_end_squares
                     & !friendly_pieces;
@@ -339,7 +334,7 @@ impl MoveGenerator {
                     }
                 }
                 if move_mask == u64::MAX {
-                    for ray in &horizontal_pin_rays {
+                    for ray in &cardinal_pin_rays {
                         if ray & mask != 0 {
                             move_mask = *ray;
                             break;
@@ -347,7 +342,7 @@ impl MoveGenerator {
                     }
                 }
 
-                let legal_end_squares = capture_mask & block_mask & move_mask;
+                let legal_end_squares = (capture_mask | block_mask) & move_mask;
                 let queen_moves = self.lookup.possible_queen_moves(i, board.all_pieces())
                     & legal_end_squares
                     & !friendly_pieces;
@@ -429,11 +424,40 @@ mod tests {
     }
 
     #[test]
-    fn perft_starting_a2_a4() {
+    fn perft_starting_a2a4() {
         test_perft(
             Board::from_fen("rnbqkbnr/pppppppp/8/8/P7/8/1PPPPPPP/RNBQKBNR b KQkq - 0 1"),
             &[20, 420, 9329, 217832],
         );
+    }
+
+    #[test]
+    fn perft_starting_c2c3_b7b5_d1a4() {
+        test_perft(
+            Board::from_fen("rnbqkbnr/p1pppppp/8/1p6/Q7/2P5/PP1PPPPP/RNB1KBNR b KQkq - 1 2"),
+            &[22],
+        );
+    }
+
+    #[test]
+    fn perft_starting_c2c3_a7a5_d1a4() {
+        test_perft(
+            Board::from_fen("rnbqkbnr/1ppppppp/8/p7/Q7/2P5/PP1PPPPP/RNB1KBNR b KQkq - 1 2"),
+            &[18],
+        )
+    }
+
+    #[test]
+    fn perft_starting_c2c3_d7d5_d1a4() {
+        test_perft(
+            Board::from_fen("rnbqkbnr/ppp1pppp/8/3p4/Q7/2P5/PP1PPPPP/RNB1KBNR b KQkq - 1 2"),
+            &[6, 206]
+        )
+    }
+
+    #[test]
+    fn perft_pawn_blocks_queen() {
+        test_perft(Board::from_fen("r3k3/3p4/8/p7/Q7/8/8/4K3 b q - 0 1"), &[10]);
     }
 
     #[test]
@@ -466,7 +490,7 @@ mod tests {
                 result,
                 elapsed.as_secs_f64() * 1000.0
             );
-            // assert_eq!(result, expected[depth]);
+            assert_eq!(result, expected[depth]);
         }
     }
 
