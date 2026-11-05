@@ -1,6 +1,6 @@
 use super::mov::PieceType::*;
-use super::mov::{squares, Move, PieceType};
 use super::mov::squares::*;
+use super::mov::{Move, PieceType, squares};
 use std::fmt;
 use std::fmt::Debug;
 
@@ -30,25 +30,61 @@ pub struct Board {
     /// - 3 bits: En passant target file
     /// - 1 bit: En passant target rank (white = 1)
     flags: u16,
+    pub zobrist_hash: u64,
+    zobrist_numbers: ZobristNumbers,
 }
 
-// Custom PartialEq impl to avoid checking the halfmove clock in equality comparisons
+#[derive(Debug, Clone)]
+struct ZobristNumbers {
+    /// Usage: piece_square_hash\[piece\]\[color\]\[square\]
+    /// White is 0.
+    piece_square_hash: [[[u64; 6]; 2]; 64],
+    white_kingside_castling_rights: u64,
+    white_queenside_castling_rights: u64,
+    black_kingside_castling_rights: u64,
+    black_queenside_castling_rights: u64,
+    white_to_move: u64,
+    /// Usage: en_passant_target\[color\]\[file\]
+    /// White is 0.
+    en_passant_target: [[u64; 8]; 2],
+}
+
+impl ZobristNumbers {
+    fn new() -> Self {
+        Self {
+            piece_square_hash: {
+                let mut piece_square_hash = [[[0; 6]; 2]; 64];
+                for piece in 0..6 {
+                    for color in 0..2 {
+                        for square in 0..64 {
+                            piece_square_hash[square][color][piece] = rand::random();
+                        }
+                    }
+                }
+                piece_square_hash
+            },
+            white_kingside_castling_rights: rand::random(),
+            white_queenside_castling_rights: rand::random(),
+            black_kingside_castling_rights: rand::random(),
+            black_queenside_castling_rights: rand::random(),
+            white_to_move: rand::random(),
+            en_passant_target: {
+                let mut en_passant_target = [[0; 8]; 2];
+                for color in 0..2 {
+                    for square in 0..8 {
+                        en_passant_target[color][square] = rand::random();
+                    }
+                }
+                en_passant_target
+            },
+        }
+    }
+}
+
+// Custom PartialEq impl to only compare Zobrist hashes
 impl PartialEq for Board {
     fn eq(&self, other: &Self) -> bool {
-        self.white == other.white
-            && self.black == other.black
-            && self.pawns == other.pawns
-            && self.knights == other.knights
-            && self.bishops == other.bishops
-            && self.rooks == other.rooks
-            && self.queens == other.queens
-            && self.kings == other.kings
-            && if self.flags & 0b1 << 11 == 0 {
-                // If en passant not performed
-                self.flags & (u16::MAX >> 4) == other.flags & (u16::MAX >> 4)
-            } else {
-                self.flags == other.flags
-            }
+        self.zobrist_hash == other.zobrist_hash
     }
 }
 
@@ -160,10 +196,12 @@ impl Board {
         let halfmove_clock = substrings.next().unwrap();
         // Fullmove clock is disregarded
 
+        let zobrist_numbers = ZobristNumbers::new();
         // Load pieces into bitboards
         let mut rank = 7; // Start at the 8th rank
         let mut file = 0; // Start at the A-file
         let mut bitboards = [0u64; 8];
+        let mut zobrist_hash = 0u64;
         for c in board_state.chars() {
             if c.is_ascii_digit() {
                 file += c.to_digit(10).unwrap() as usize;
@@ -178,52 +216,64 @@ impl Board {
             }
 
             let mask: u64 = 1 << (rank * 8 + file);
-            if c.is_uppercase() {
-                bitboards[0] |= mask;
-            } else {
-                bitboards[1] |= mask;
-            }
-            match c {
-                'P' | 'p' => bitboards[2] |= mask,
-                'N' | 'n' => bitboards[3] |= mask,
-                'B' | 'b' => bitboards[4] |= mask,
-                'R' | 'r' => bitboards[5] |= mask,
-                'Q' | 'q' => bitboards[6] |= mask,
-                'K' | 'k' => bitboards[7] |= mask,
+            let white = if c.is_uppercase() { 0 } else { 1 };
+            bitboards[white] |= mask;
+            let piece_type = match c {
+                'P' | 'p' => 0,
+                'N' | 'n' => 1,
+                'B' | 'b' => 2,
+                'R' | 'r' => 3,
+                'Q' | 'q' => 4,
+                'K' | 'k' => 5,
                 _ => panic!("Invalid FEN string: Unknown char"),
-            }
+            };
+            bitboards[2 + piece_type] |= mask;
+            zobrist_hash ^= zobrist_numbers.piece_square_hash[rank * 8 + file][white][piece_type];
             file += 1;
         }
 
         // Load miscellaneous data
-        let mut other: u16 = 0;
+        let mut flags: u16 = 0;
 
         // Load halfmove clock into first 6 bits
-        other |= halfmove_clock.parse::<u16>().unwrap();
+        flags |= halfmove_clock.parse::<u16>().unwrap();
 
         // Load castling rights into next 4 bits
         for c in castling_rights.chars() {
             match c {
-                'K' => other |= 0b0001 << 6,
-                'Q' => other |= 0b0010 << 6,
-                'k' => other |= 0b0100 << 6,
-                'q' => other |= 0b1000 << 6,
+                'K' => {
+                    flags |= 0b0001 << 6;
+                    zobrist_hash ^= zobrist_numbers.white_kingside_castling_rights
+                }
+                'Q' => {
+                    flags |= 0b0010 << 6;
+                    zobrist_hash ^= zobrist_numbers.white_queenside_castling_rights
+                }
+                'k' => {
+                    flags |= 0b0100 << 6;
+                    zobrist_hash ^= zobrist_numbers.black_kingside_castling_rights
+                }
+                'q' => {
+                    flags |= 0b1000 << 6;
+                    zobrist_hash ^= zobrist_numbers.black_queenside_castling_rights
+                }
                 _ => {}
             }
         }
 
         // Load white to move into next bit
         if white_to_move == "w" {
-            other |= 1 << 10
+            flags |= 1 << 10;
+            zobrist_hash ^= zobrist_numbers.white_to_move;
         }
 
         // Load if en passant was performed into next bit
         let mut en_passant_target = en_passant_target.chars();
         let en_passant_target_file = en_passant_target.next().unwrap();
         if en_passant_target_file != '-' {
-            other |= 1 << 11;
+            flags |= 1 << 11;
             // Load en passant target into next 4 bits
-            other |= match en_passant_target_file {
+            let file = match en_passant_target_file {
                 'a' => 0,
                 'b' => 1,
                 'c' => 2,
@@ -233,9 +283,12 @@ impl Board {
                 'g' => 6,
                 'h' => 7,
                 _ => panic!(),
-            } << 12;
+            };
+            flags |= file << 12;
             let en_passant_target_rank = en_passant_target.next().unwrap();
-            other |= (if en_passant_target_rank == '3' { 1 } else { 0 }) << 15;
+            let white = if en_passant_target_rank == '3' { 1 } else { 0 };
+            flags |= white << 15;
+            zobrist_hash ^= zobrist_numbers.en_passant_target[1 - white as usize][file as usize];
         }
 
         let [white, black, pawns, knights, bishops, rooks, queens, kings] = bitboards;
@@ -248,7 +301,9 @@ impl Board {
             rooks,
             queens,
             kings,
-            flags: other,
+            flags,
+            zobrist_hash,
+            zobrist_numbers,
         }
     }
 
@@ -275,7 +330,7 @@ impl Board {
     pub fn get_castling_rights(&self) -> u8 {
         ((self.flags >> 6) & 0b1111) as u8
     }
-    
+
     pub fn kingside_castling_available(&self, white: bool) -> bool {
         if white {
             (self.flags >> 6) & 0b1 == 1
@@ -309,14 +364,17 @@ impl Board {
 
     /// Makes a move on the board state, assuming that the move is legal.
     ///
-    /// Returns the state of the board's flags before the move was made.
-    /// If the move captures a piece, the captured piece is returned. Otherwise, None is returned.
-    pub fn make_move(&mut self, mov: &Move) -> (u16, Option<PieceType>) {
+    /// Returns a tuple of:
+    /// - The last flags
+    /// - The last Zobrist hash
+    /// - The captured piece type, if any
+    pub fn make_move(&mut self, mov: &Move) -> (u16, u64, Option<PieceType>) {
+        let last_zobrist_hash = self.zobrist_hash;
         // Handle special moves
         match mov.flags() {
-            0b0001 => return (self.make_en_passant(&mov), None),
-            0b0010 => return (self.make_castle(&mov), None),
-            0b0011 => return (self.make_double_pawn_push(&mov), None),
+            0b0001 => return (self.make_en_passant(&mov), last_zobrist_hash, None),
+            0b0010 => return (self.make_castle(&mov), last_zobrist_hash, None),
+            0b0011 => return (self.make_double_pawn_push(&mov), last_zobrist_hash, None),
             _ => {}
         };
 
@@ -373,11 +431,31 @@ impl Board {
 
         // Remove the captured piece from the board
         match &capture {
-            Some(Pawn) => self.pawns &= !end_mask,
-            Some(Knight) => self.knights &= !end_mask,
-            Some(Bishop) => self.bishops &= !end_mask,
-            Some(Rook) => self.rooks &= !end_mask,
-            Some(Queen) => self.queens &= !end_mask,
+            Some(Pawn) => {
+                self.pawns &= !end_mask;
+                self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash
+                    [mov.ending_index() as usize][if white { 1 } else { 0 }][0];
+            }
+            Some(Knight) => {
+                self.knights &= !end_mask;
+                self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash
+                    [mov.ending_index() as usize][if white { 1 } else { 0 }][1];
+            }
+            Some(Bishop) => {
+                self.bishops &= !end_mask;
+                self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash
+                    [mov.ending_index() as usize][if white { 1 } else { 0 }][2];
+            }
+            Some(Rook) => {
+                self.rooks &= !end_mask;
+                self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash
+                    [mov.ending_index() as usize][if white { 1 } else { 0 }][3];
+            }
+            Some(Queen) => {
+                self.queens &= !end_mask;
+                self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash
+                    [mov.ending_index() as usize][if white { 1 } else { 0 }][4];
+            }
             Some(King) => panic!("King capture??????"),
             None => {}
         }
@@ -390,50 +468,92 @@ impl Board {
         }
 
         // Remove the piece from the start square and add it to the end square
+        let start_piece_type_index;
+        let end_piece_type_index;
         match moved_piece {
             Pawn => {
                 self.pawns &= !start_mask;
+                start_piece_type_index = 0;
                 // Promotions
                 match mov.flags() {
-                    0b0100 => self.queens |= end_mask,
-                    0b0101 => self.rooks |= end_mask,
-                    0b0110 => self.bishops |= end_mask,
-                    0b0111 => self.knights |= end_mask,
-                    _ => self.pawns |= end_mask,
+                    0b0100 => {
+                        self.queens |= end_mask;
+                        end_piece_type_index = 4
+                    }
+                    0b0101 => {
+                        self.rooks |= end_mask;
+                        end_piece_type_index = 3
+                    }
+                    0b0110 => {
+                        self.bishops |= end_mask;
+                        end_piece_type_index = 2
+                    }
+                    0b0111 => {
+                        self.knights |= end_mask;
+                        end_piece_type_index = 1
+                    }
+                    _ => {
+                        self.pawns |= end_mask;
+                        end_piece_type_index = 0
+                    }
                 }
             }
             Knight => {
                 self.knights &= !start_mask;
-                self.knights |= end_mask
+                self.knights |= end_mask;
+                start_piece_type_index = 1;
+                end_piece_type_index = 1;
             }
             Bishop => {
                 self.bishops &= !start_mask;
-                self.bishops |= end_mask
+                self.bishops |= end_mask;
+                start_piece_type_index = 2;
+                end_piece_type_index = 2;
             }
             Rook => {
                 self.rooks &= !start_mask;
-                self.rooks |= end_mask
+                self.rooks |= end_mask;
+                start_piece_type_index = 3;
+                end_piece_type_index = 3;
             }
             Queen => {
                 self.queens &= !start_mask;
-                self.queens |= end_mask
+                self.queens |= end_mask;
+                start_piece_type_index = 4;
+                end_piece_type_index = 4;
             }
             King => {
                 self.kings &= !start_mask;
-                self.kings |= end_mask
+                self.kings |= end_mask;
+                start_piece_type_index = 5;
+                end_piece_type_index = 5;
             }
         }
         if white {
             self.white &= !start_mask;
             self.white |= end_mask;
+            self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash
+                [mov.starting_index() as usize][0][start_piece_type_index];
+            self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash
+                [mov.ending_index() as usize][0][end_piece_type_index];
         } else {
             self.black &= !start_mask;
             self.black |= end_mask;
+            self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash
+                [mov.starting_index() as usize][1][start_piece_type_index];
+            self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash
+                [mov.ending_index() as usize][1][end_piece_type_index];
         }
 
         // Toggle white to move
         self.flags ^= 1 << 10;
+        self.zobrist_hash ^= self.zobrist_numbers.white_to_move;
+
         // Clear en passant flags
+        if let Some(target) = self.en_passant_target() {
+            self.zobrist_hash ^= self.zobrist_numbers.en_passant_target[if white { 1 } else { 0 }]
+                [(target % 8) as usize];
+        }
         self.flags &= !(0b11111 << 11);
 
         if white {
@@ -443,6 +563,7 @@ impl Board {
             {
                 // Then clear the flag for white's kingside castling
                 self.flags &= !(1 << 6);
+                self.zobrist_hash ^= self.zobrist_numbers.white_kingside_castling_rights;
             }
             if self.flags & 1 << 7 != 0 // If white's queenside castling is available,
                 // and either the A file rook or the king moved
@@ -450,6 +571,7 @@ impl Board {
             {
                 // Then clear the flag for white's queenside castling
                 self.flags &= !(1 << 7);
+                self.zobrist_hash ^= self.zobrist_numbers.white_queenside_castling_rights;
             }
             if self.flags & 1 << 8 != 0 // If black's kingside castling is available, 
                 // and we're capturing the rook on H8
@@ -457,6 +579,7 @@ impl Board {
             {
                 // Then clear the flag for black's kingside castling
                 self.flags &= !(1 << 8);
+                self.zobrist_hash ^= self.zobrist_numbers.black_kingside_castling_rights;
             }
             if self.flags & 1 << 9 != 0 // If black's queenside castling is available,
                 // and we're capturing the rook on A8
@@ -464,6 +587,7 @@ impl Board {
             {
                 // Then clear the flag for black's queenside castling
                 self.flags &= !(1 << 9);
+                self.zobrist_hash ^= self.zobrist_numbers.black_queenside_castling_rights;
             }
         } else {
             if self.flags & 1 << 8 != 0 // If black's kingside castling is available,
@@ -472,6 +596,7 @@ impl Board {
             {
                 // Then clear the flag for black's kingside castling
                 self.flags &= !(1 << 8);
+                self.zobrist_hash ^= self.zobrist_numbers.black_kingside_castling_rights;
             }
             if self.flags & 1 << 9 != 0 // If black's queenside castling is available,
                 // and either the A file rook moved, or the king moved
@@ -479,6 +604,7 @@ impl Board {
             {
                 // Then clear the flag for black's queenside castling
                 self.flags &= !(1 << 9);
+                self.zobrist_hash ^= self.zobrist_numbers.black_queenside_castling_rights;
             }
             if self.flags & 1 << 6 != 0 // If white's kingside castling is available,
             // and we're capturing the rook on H1,
@@ -486,6 +612,7 @@ impl Board {
             {
                 // Then clear the flag for white's kingside castling
                 self.flags &= !(1 << 6);
+                self.zobrist_hash ^= self.zobrist_numbers.white_kingside_castling_rights;
             }
             if self.flags & 1 << 7 != 0 // If white's queenside castling is available,
             // and we're capturing the rook on A1,
@@ -493,22 +620,30 @@ impl Board {
             {
                 // Then clear the flag for white's queenside castling
                 self.flags &= !(1 << 7);
+                self.zobrist_hash ^= self.zobrist_numbers.white_queenside_castling_rights;
             }
         }
 
-        assert_eq!(self.white & self.black, 0, "A black and white piece on the same square");
+        assert_eq!(
+            self.white & self.black,
+            0,
+            "A black and white piece on the same square"
+        );
 
-        (last_flags, capture)
+        (last_flags, last_zobrist_hash, capture)
     }
 
     /// Unmakes a move on the board state.
     ///
     /// Takes the last flag and the captured piece type as input.
-    pub fn unmake_move(&mut self, mov: &Move, last_flag: u16, capture: &Option<PieceType>) {
+    pub fn unmake_move(&mut self, mov: &Move, metadata: (u16, u64, Option<PieceType>)) {
+        let (last_flag, last_zobrist_hash, capture) = metadata;
+        self.zobrist_hash = last_zobrist_hash;
+        self.flags = last_flag;
         match mov.flags() {
-            0b0001 => return self.unmake_en_passant(&mov, last_flag),
-            0b0010 => return self.unmake_castle(&mov, last_flag),
-            0b0011 => return self.unmake_double_pawn_push(&mov, last_flag),
+            0b0001 => return self.unmake_en_passant(mov),
+            0b0010 => return self.unmake_castle(mov),
+            0b0011 => return self.unmake_double_pawn_push(mov),
             _ => {}
         }
 
@@ -593,8 +728,6 @@ impl Board {
                 self.white |= end_mask;
             }
         }
-
-        self.flags = last_flag;
     }
 
     /// Makes a double pawn push on the board state, assuming that the move is legal.
@@ -612,9 +745,17 @@ impl Board {
         if white {
             self.white &= !start_mask;
             self.white |= end_mask;
+            self.zobrist_hash ^=
+                self.zobrist_numbers.piece_square_hash[mov.starting_index() as usize][0][0];
+            self.zobrist_hash ^=
+                self.zobrist_numbers.piece_square_hash[mov.ending_index() as usize][0][0];
         } else {
             self.black &= !start_mask;
             self.black |= end_mask;
+            self.zobrist_hash ^=
+                self.zobrist_numbers.piece_square_hash[mov.starting_index() as usize][1][0];
+            self.zobrist_hash ^=
+                self.zobrist_numbers.piece_square_hash[mov.ending_index() as usize][1][0];
         }
 
         self.pawns &= !start_mask;
@@ -624,10 +765,20 @@ impl Board {
 
         let last_flag = self.flags;
 
+        // Toggle off last en passant target
+        if let Some(target) = self.en_passant_target() {
+            self.zobrist_hash ^= self.zobrist_numbers.en_passant_target[if white { 1 } else { 0 }]
+                [(target % 8) as usize];
+        }
+        // Toggle on this en passant target
+        self.zobrist_hash ^= self.zobrist_numbers.en_passant_target[if white { 0 } else { 1 }]
+            [(mov.starting_index() % 8) as usize];
+
         // Reset halfmove clock
         self.flags &= !0b111111;
         // Toggle white to move
         self.flags ^= 1 << 10;
+        self.zobrist_hash ^= self.zobrist_numbers.white_to_move;
         // Clear en passant flags
         self.flags &= !(0b11111 << 11);
         // Flag en passant
@@ -643,7 +794,7 @@ impl Board {
     /// Unmakes a double pawn push.
     ///
     /// Takes the last flag value before the move.
-    fn unmake_double_pawn_push(&mut self, mov: &Move, last_flag: u16) {
+    fn unmake_double_pawn_push(&mut self, mov: &Move) {
         let start_mask = mov.starting_mask();
         let end_mask = mov.ending_mask();
 
@@ -658,8 +809,6 @@ impl Board {
 
         self.pawns |= start_mask;
         self.pawns &= !end_mask;
-
-        self.flags = last_flag;
     }
 
     /// Makes an en passant move on the board state, assuming that the move is legal.
@@ -672,24 +821,40 @@ impl Board {
         let end_mask = mov.ending_mask();
 
         let white = self.white & start_mask != 0;
-        let capture_mask = if white {
-            1 << (mov.ending_index() - 8)
+        let capture_index = if white {
+            mov.ending_index() - 8
         } else {
-            1 << (mov.ending_index() + 8)
+            mov.ending_index() + 8
         };
+        let capture_mask = mask(capture_index);
 
         if white {
             self.white &= !start_mask;
             self.white |= end_mask;
             self.black &= !capture_mask;
+            self.zobrist_hash ^=
+                self.zobrist_numbers.piece_square_hash[mov.starting_index() as usize][0][0];
+            self.zobrist_hash ^=
+                self.zobrist_numbers.piece_square_hash[mov.ending_index() as usize][0][0];
+            self.zobrist_hash ^=
+                self.zobrist_numbers.piece_square_hash[capture_index as usize][1][0];
         } else {
             self.black &= !start_mask;
             self.black |= end_mask;
             self.white &= !capture_mask;
+            self.zobrist_hash ^=
+                self.zobrist_numbers.piece_square_hash[mov.starting_index() as usize][1][0];
+            self.zobrist_hash ^=
+                self.zobrist_numbers.piece_square_hash[mov.ending_index() as usize][1][0];
+            self.zobrist_hash ^=
+                self.zobrist_numbers.piece_square_hash[capture_index as usize][0][0];
         }
 
         self.pawns &= !(start_mask | capture_mask);
         self.pawns |= end_mask;
+        // Toggle off this en passant target
+        self.zobrist_hash ^= self.zobrist_numbers.en_passant_target[if white { 1 } else { 0 }]
+            [(mov.ending_index() % 8) as usize];
 
         let flags = self.flags;
 
@@ -697,6 +862,7 @@ impl Board {
         self.flags &= !0b111111;
         // Toggle white to move
         self.flags ^= 1 << 10;
+        self.zobrist_hash ^= self.zobrist_numbers.white_to_move;
         // Clear en passant flags
         self.flags &= !(0b11111 << 11);
 
@@ -706,7 +872,7 @@ impl Board {
     /// Unmakes an en passant.
     ///
     /// Takes the last flag value before the move.
-    fn unmake_en_passant(&mut self, mov: &Move, last_flag: u16) {
+    fn unmake_en_passant(&mut self, mov: &Move) {
         let start_mask = mov.starting_mask();
         let end_mask = mov.ending_mask();
 
@@ -729,8 +895,6 @@ impl Board {
 
         self.pawns |= start_mask | capture_mask;
         self.pawns &= !end_mask;
-
-        self.flags = last_flag;
     }
 
     /// Makes a castling move on the board state, assuming that the move is legal.
@@ -748,19 +912,29 @@ impl Board {
             if kingside {
                 rook_start_mask = mask(H1);
                 rook_end_mask = mask(F1);
+                self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash[H1 as usize][0][3];
+                self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash[F1 as usize][0][3];
             } else {
                 rook_start_mask = mask(A1);
                 rook_end_mask = mask(D1);
+                self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash[A1 as usize][0][3];
+                self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash[D1 as usize][0][3];
             }
         } else {
             if kingside {
                 rook_start_mask = mask(H8);
                 rook_end_mask = mask(F8);
+                self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash[H8 as usize][1][3];
+                self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash[F8 as usize][1][3];
             } else {
                 rook_start_mask = mask(A8);
                 rook_end_mask = mask(D8);
+                self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash[A8 as usize][1][3];
+                self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash[D8 as usize][1][3];
             }
         }
+        self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash[mov.starting_index() as usize][!white as usize][5];
+        self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash[mov.ending_index() as usize][!white as usize][5];
 
         self.kings &= !king_start_mask;
         self.kings |= king_end_mask;
@@ -776,23 +950,34 @@ impl Board {
 
         let flags = self.flags;
 
+        // Toggle off en passant target
+        if let Some(target) = self.en_passant_target() {
+            self.zobrist_hash ^= self.zobrist_numbers.en_passant_target[if white { 1 } else { 0 }]
+                [(target % 8) as usize];
+        }
+
         // Increment halfmove clock
         self.flags += 1;
         // Toggle white to move
         self.flags ^= 1 << 10;
+        self.zobrist_hash ^= self.zobrist_numbers.white_to_move;
         // Clear en passant flags
         self.flags &= !(0b11111 << 11);
 
         if white {
             self.flags &= !((1 << 6) + (1 << 7));
+            self.zobrist_hash ^= self.zobrist_numbers.white_kingside_castling_rights;
+            self.zobrist_hash ^= self.zobrist_numbers.white_queenside_castling_rights;
         } else {
             self.flags &= !((1 << 8) + (1 << 9));
+            self.zobrist_hash ^= self.zobrist_numbers.black_kingside_castling_rights;
+            self.zobrist_hash ^= self.zobrist_numbers.black_queenside_castling_rights;
         }
 
         flags
     }
 
-    fn unmake_castle(&mut self, mov: &Move, last_flags: u16) {
+    fn unmake_castle(&mut self, mov: &Move) {
         let white = self.white & mov.ending_mask() != 0;
         let kingside = mov.ending_index() % 8 == 6;
 
@@ -829,16 +1014,14 @@ impl Board {
             self.black |= king_start_mask | rook_start_mask;
             self.black &= !(king_end_mask | rook_end_mask);
         }
-
-        self.flags = last_flags;
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::mov::squares::{A1, A2, A3, A7, B8, C3, E4, E5};
     use super::super::mov::{Move, PieceType};
     use super::Board;
-    use super::super::mov::squares::{A1, A2, A3, A7, B8, C3, E4, E5};
 
     #[test]
     fn test_load_starting() {
@@ -1032,47 +1215,47 @@ mod tests {
         let start_board = Board::starting();
         let mut board = start_board.clone();
         let mov = Move::regular(A2, A3);
-        let (flags, capture) = board.make_move(&mov);
+        let metadata = board.make_move(&mov);
         assert_eq!(
             board,
             Board::from_fen("rnbqkbnr/pppppppp/8/8/8/P7/1PPPPPPP/RNBQKBNR b KQkq - 0 1")
         );
         // Test unmaking a move
-        board.unmake_move(&mov, flags, &capture);
+        board.unmake_move(&mov, metadata);
         assert_eq!(board, start_board);
         // Test capture
         let start_board =
             Board::from_fen("rnbqkb1r/pppppppp/8/8/4n3/2N5/PPPPPPPP/R1BQKBNR w KQkq - 0 1");
         let mut board = start_board.clone();
         let mov = Move::regular(C3, E4);
-        let (flags, capture) = board.make_move(&mov);
+        let metadata = board.make_move(&mov);
         assert_eq!(
             board,
             Board::from_fen("rnbqkb1r/pppppppp/8/8/4N3/8/PPPPPPPP/R1BQKBNR b KQkq - 0 1")
         );
         // Test unmaking a capture
-        board.unmake_move(&mov, flags, &capture);
+        board.unmake_move(&mov, metadata);
         assert_eq!(board, start_board);
         // Test increment halfmove clock & test castling rights
         let start_board =
             Board::from_fen("rnbqkbnr/1ppppppp/8/p7/P7/8/1PPPPPPP/RNBQKBNR w KQkq - 0 1");
         let mut board = start_board.clone();
         let mov = Move::regular(A1, A3);
-        let (flags, capture) = board.make_move(&mov);
+        let metadata = board.make_move(&mov);
         assert_eq!(
             board,
             Board::from_fen("rnbqkbnr/1ppppppp/8/p7/P7/R7/1PPPPPPP/1NBQKBNR b Kkq - 1 1")
         );
         // Test reset flags
-        board.unmake_move(&mov, flags, &capture);
+        board.unmake_move(&mov, metadata);
         assert_eq!(board, start_board);
         // Test pawn promotion
         let start_board = Board::from_fen("1b2k3/P7/8/8/8/8/8/4K3 w - - 0 1");
         let mut board = start_board.clone();
         let mov = Move::pawn_promotion(A7, B8, PieceType::Queen);
-        let (flags, capture) = board.make_move(&mov);
+        let metadata = board.make_move(&mov);
         assert_eq!(board, Board::from_fen("1Q2k3/8/8/8/8/8/8/4K3 b - - 0 1"));
-        board.unmake_move(&mov, flags, &capture);
+        board.unmake_move(&mov, metadata);
         assert_eq!(board, start_board);
     }
 
@@ -1081,12 +1264,12 @@ mod tests {
         let start_board = Board::starting();
         let mut board = start_board.clone();
         let mov = Move::double_pawn_push(A2);
-        let flags = board.make_double_pawn_push(&mov);
+        let flags = board.make_move(&mov);
         assert_eq!(
             board,
             Board::from_fen("rnbqkbnr/pppppppp/8/8/P7/8/1PPPPPPP/RNBQKBNR b KQkq a3 0 1")
         );
-        board.unmake_double_pawn_push(&mov, flags);
+        board.unmake_move(&mov, flags);
         assert_eq!(board, start_board);
     }
 
@@ -1096,12 +1279,12 @@ mod tests {
             Board::from_fen("rnbqkbnr/pp2pppp/2p5/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3");
         let mut board = start_board.clone();
         let mov = Move::left_en_passant(E5);
-        let flags = board.make_en_passant(&mov);
+        let metadata = board.make_move(&mov);
         assert_eq!(
             board,
             Board::from_fen("rnbqkbnr/pp2pppp/2pP4/8/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 3")
         );
-        board.unmake_en_passant(&mov, flags);
+        board.unmake_move(&mov, metadata);
         assert_eq!(board, start_board);
     }
 
@@ -1111,45 +1294,45 @@ mod tests {
         let start_board = Board::from_fen("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1");
         let mut board = start_board.clone();
         let mov = Move::kingside_castle(true);
-        let flags = board.make_castle(&mov);
+        let metadata = board.make_move(&mov);
         assert_eq!(
             board,
             Board::from_fen("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R4RK1 b kq - 1 1")
         );
         // Test unmake white kingside castle
-        board.unmake_castle(&mov, flags);
+        board.unmake_move(&mov, metadata);
         assert_eq!(board, start_board);
         // Test make white queenside castle
         let mov = Move::queenside_castle(true);
-        let flags = board.make_castle(&mov);
+        let metadata = board.make_move(&mov);
         assert_eq!(
             board,
             Board::from_fen("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/2KR3R b kq - 1 1")
         );
         // Test unmake white queenside castle
-        board.unmake_castle(&mov, flags);
+        board.unmake_move(&mov, metadata);
         assert_eq!(board, start_board);
         // Test make black kingside castle
         let start_board = Board::from_fen("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R b KQkq - 0 1");
         let mut board = start_board.clone();
         let mov = Move::kingside_castle(false);
-        let flags = board.make_castle(&mov);
+        let metadata = board.make_move(&mov);
         assert_eq!(
             board,
             Board::from_fen("r4rk1/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQ - 1 2")
         );
         // Test unmake black kingside castle
-        board.unmake_castle(&mov, flags);
+        board.unmake_move(&mov, metadata);
         assert_eq!(board, start_board);
         // Test make black queenside castle
         let mov = Move::queenside_castle(false);
-        let flags = board.make_castle(&mov);
+        let metadata = board.make_move(&mov);
         assert_eq!(
             board,
             Board::from_fen("2kr3r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQ - 1 2")
         );
         // Test unmake black queenside castle
-        board.unmake_castle(&mov, flags);
+        board.unmake_move(&mov, metadata);
         assert_eq!(board, start_board);
     }
 }

@@ -628,13 +628,13 @@ mod tests {
         }
         let mut total_moves = 0;
         for mov in moves {
-            let (last_flag, capture) = board.make_move(&mov);
+            let metadata = board.make_move(&mov);
             let nodes = perft(move_generator, board, depth - 1, false);
             if divide {
                 println!("Move {}: {} nodes", mov, nodes);
             }
             total_moves += nodes;
-            board.unmake_move(&mov, last_flag, &capture);
+            board.unmake_move(&mov, metadata);
         }
         total_moves
     }
