@@ -111,15 +111,18 @@ impl MoveGenerator {
             let checker_mask = 1 << checker_index;
             capture_mask = 1 << checker_index;
             if board.rooks & checker_mask != 0 {
-                block_mask = self.lookup.possible_rook_moves(checker_index, king_mask) & king_rook_mask;
+                block_mask =
+                    self.lookup.possible_rook_moves(checker_index, king_mask) & king_rook_mask;
             } else if board.bishops & checker_mask != 0 {
-                block_mask = self.lookup.possible_bishop_moves(checker_index, king_mask) & king_bishop_mask;
+                block_mask =
+                    self.lookup.possible_bishop_moves(checker_index, king_mask) & king_bishop_mask;
             } else if board.queens & checker_mask != 0 {
                 if checker_mask & king_rook_mask != 0 {
-                    block_mask = self.lookup.possible_rook_moves(checker_index, king_mask) & king_rook_mask;
-                } else if checker_mask & king_bishop_mask != 0 {
                     block_mask =
-                        self.lookup.possible_bishop_moves(checker_index, king_mask) & king_bishop_mask;
+                        self.lookup.possible_rook_moves(checker_index, king_mask) & king_rook_mask;
+                } else if checker_mask & king_bishop_mask != 0 {
+                    block_mask = self.lookup.possible_bishop_moves(checker_index, king_mask)
+                        & king_bishop_mask;
                 }
             } else if board.pawns & checker_mask != 0 || board.knights & checker_mask != 0 {
                 block_mask = 0;
@@ -226,12 +229,20 @@ impl MoveGenerator {
 
                 if cardinal_pin_mask == u64::MAX {
                     let push_square = if white { i + 8 } else { i - 8 };
+                    let final_rank = if white { 7 } else { 0 };
                     if i % 8 > 0 {
                         let left_capture_square = push_square - 1;
                         let left_capture_mask = 1 << left_capture_square;
                         if left_capture_mask & diagonal_pin_mask & capture_mask & enemy_pieces != 0
                         {
-                            moves.push(Move::regular(i, left_capture_square));
+                            if push_square / 8 == final_rank {
+                                moves.push(Move::pawn_promotion(i, left_capture_square, Knight));
+                                moves.push(Move::pawn_promotion(i, left_capture_square, Bishop));
+                                moves.push(Move::pawn_promotion(i, left_capture_square, Rook));
+                                moves.push(Move::pawn_promotion(i, left_capture_square, Queen));
+                            } else {
+                                moves.push(Move::regular(i, left_capture_square));
+                            }
                         }
                     }
                     if i % 8 < 7 {
@@ -239,7 +250,14 @@ impl MoveGenerator {
                         let right_capture_mask = 1 << right_capture_square;
                         if right_capture_mask & diagonal_pin_mask & capture_mask & enemy_pieces != 0
                         {
-                            moves.push(Move::regular(i, right_capture_square));
+                            if push_square / 8 == final_rank {
+                                moves.push(Move::pawn_promotion(i, right_capture_square, Knight));
+                                moves.push(Move::pawn_promotion(i, right_capture_square, Bishop));
+                                moves.push(Move::pawn_promotion(i, right_capture_square, Rook));
+                                moves.push(Move::pawn_promotion(i, right_capture_square, Queen));
+                            } else {
+                                moves.push(Move::regular(i, right_capture_square));
+                            }
                         }
                     }
 
@@ -417,7 +435,10 @@ mod tests {
 
     #[test]
     fn perft_starting() {
-        test_perft("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", &[20, 400, 8902, 197281, 4865609]);
+        test_perft(
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            &[20, 400, 8902, 197281, 4865609],
+        );
     }
 
     #[test]
@@ -523,8 +544,18 @@ mod tests {
 
     #[test]
     fn perft_kiwipete_c3b1_a6b5() {
-        test_perft("r3k2r/p1ppqpb1/1n2pnp1/1b1PN3/1p2P3/5Q1p/PPPBBPPP/RN2K2R w KQkq - 2 2",
-        &[48]);
+        test_perft(
+            "r3k2r/p1ppqpb1/1n2pnp1/1b1PN3/1p2P3/5Q1p/PPPBBPPP/RN2K2R w KQkq - 2 2",
+            &[48],
+        );
+    }
+
+    #[test]
+    fn perft_kiwipete_a2a3_h3g2_a1a2() {
+        test_perft(
+            "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/P1N2Q2/RPPBBPpP/4K2R b Kkq - 1 2",
+            &[53],
+        );
     }
 
     fn test_perft(fen: &str, expected: &[usize]) {
