@@ -417,13 +417,13 @@ mod tests {
 
     #[test]
     fn perft_starting() {
-        test_perft(Board::starting(), &[20, 400, 8902, 197281, 4865609]);
+        test_perft("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", &[20, 400, 8902, 197281, 4865609]);
     }
 
     #[test]
     fn perft_fools() {
         test_perft(
-            Board::from_fen("rnbqkbnr/ppppp1pp/5p2/7Q/8/4P3/PPPP1PPP/RNB1KBNR b KQkq - 1 1"),
+            "rnbqkbnr/ppppp1pp/5p2/7Q/8/4P3/PPPP1PPP/RNB1KBNR b KQkq - 1 1",
             &[1],
         )
     }
@@ -431,7 +431,7 @@ mod tests {
     #[test]
     fn perft_starting_a2a4() {
         test_perft(
-            Board::from_fen("rnbqkbnr/pppppppp/8/8/P7/8/1PPPPPPP/RNBQKBNR b KQkq - 0 1"),
+            "rnbqkbnr/pppppppp/8/8/P7/8/1PPPPPPP/RNBQKBNR b KQkq - 0 1",
             &[20, 420, 9329, 217832],
         );
     }
@@ -439,7 +439,7 @@ mod tests {
     #[test]
     fn perft_starting_c2c3_b7b5_d1a4() {
         test_perft(
-            Board::from_fen("rnbqkbnr/p1pppppp/8/1p6/Q7/2P5/PP1PPPPP/RNB1KBNR b KQkq - 1 2"),
+            "rnbqkbnr/p1pppppp/8/1p6/Q7/2P5/PP1PPPPP/RNB1KBNR b KQkq - 1 2",
             &[22],
         );
     }
@@ -447,7 +447,7 @@ mod tests {
     #[test]
     fn perft_starting_c2c3_a7a5_d1a4() {
         test_perft(
-            Board::from_fen("rnbqkbnr/1ppppppp/8/p7/Q7/2P5/PP1PPPPP/RNB1KBNR b KQkq - 1 2"),
+            "rnbqkbnr/1ppppppp/8/p7/Q7/2P5/PP1PPPPP/RNB1KBNR b KQkq - 1 2",
             &[18],
         )
     }
@@ -455,7 +455,7 @@ mod tests {
     #[test]
     fn perft_starting_c2c3_d7d5_d1a4() {
         test_perft(
-            Board::from_fen("rnbqkbnr/ppp1pppp/8/3p4/Q7/2P5/PP1PPPPP/RNB1KBNR b KQkq - 1 2"),
+            "rnbqkbnr/ppp1pppp/8/3p4/Q7/2P5/PP1PPPPP/RNB1KBNR b KQkq - 1 2",
             &[6, 206],
         )
     }
@@ -463,7 +463,7 @@ mod tests {
     #[test]
     fn perft_starting_d2d4() {
         test_perft(
-            Board::from_fen("rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1"),
+            "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
             &[20, 560, 12435, 361790],
         )
     }
@@ -471,7 +471,7 @@ mod tests {
     #[test]
     fn perft_starting_d2d4_c7c5_e1d2() {
         test_perft(
-            Board::from_fen("rnbqkbnr/pp1ppppp/8/2p5/3P4/8/PPPKPPPP/RNBQ1BNR b kq - 1 2"),
+            "rnbqkbnr/pp1ppppp/8/2p5/3P4/8/PPPKPPPP/RNBQ1BNR b kq - 1 2",
             &[23, 548],
         )
     }
@@ -479,7 +479,7 @@ mod tests {
     #[test]
     fn perft_starting_d2d4_c7c5_e1d2_d8a5_c5c4() {
         test_perft(
-            Board::from_fen("rnbqkbnr/pp1ppppp/8/8/2pP4/8/PPPKPPPP/RNBQ1BNR w kq - 0 3"),
+            "rnbqkbnr/pp1ppppp/8/8/2pP4/8/PPPKPPPP/RNBQ1BNR w kq - 0 3",
             &[22],
         )
     }
@@ -487,20 +487,20 @@ mod tests {
     #[test]
     fn perft_starting_d2d4_c7c5_e1d2_d8a5() {
         test_perft(
-            Board::from_fen("rnb1kbnr/pp1ppppp/8/q1p5/3P4/8/PPPKPPPP/RNBQ1BNR w kq - 2 3"),
+            "rnb1kbnr/pp1ppppp/8/q1p5/3P4/8/PPPKPPPP/RNBQ1BNR w kq - 2 3",
             &[5],
         )
     }
 
     #[test]
     fn perft_pawn_blocks_queen() {
-        test_perft(Board::from_fen("r3k3/3p4/8/p7/Q7/8/8/4K3 b q - 0 1"), &[10]);
+        test_perft("r3k3/3p4/8/p7/Q7/8/8/4K3 b q - 0 1", &[10]);
     }
 
     #[test]
     fn perft_kiwipete() {
         test_perft(
-            Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"),
+            "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
             &[48, 2039, 97862, 4085603],
         )
     }
@@ -508,7 +508,7 @@ mod tests {
     #[test]
     fn perft_kiwipete_e5c6() {
         test_perft(
-            Board::from_fen("r3k2r/p1ppqpb1/bnN1pnp1/3P4/1p2P3/2N2Q1p/PPPBBPPP/R3K2R b KQkq - 1 1"),
+            "r3k2r/p1ppqpb1/bnN1pnp1/3P4/1p2P3/2N2Q1p/PPPBBPPP/R3K2R b KQkq - 1 1",
             &[41, 2027],
         )
     }
@@ -516,20 +516,20 @@ mod tests {
     #[test]
     fn perft_kiwipete_e5d7() {
         test_perft(
-            Board::from_fen("r3k2r/p1pNqpb1/bn2pnp1/3P4/1p2P3/2N2Q1p/PPPBBPPP/R3K2R b KQkq - 0 1"),
+            "r3k2r/p1pNqpb1/bn2pnp1/3P4/1p2P3/2N2Q1p/PPPBBPPP/R3K2R b KQkq - 0 1",
             &[45],
         )
     }
 
     #[test]
     fn perft_kiwipete_c3b1_a6b5() {
-        test_perft(Board::from_fen("r3k2r/p1ppqpb1/1n2pnp1/1b1PN3/1p2P3/5Q1p/PPPBBPPP/RN2K2R w KQkq - 2 2"),
+        test_perft("r3k2r/p1ppqpb1/1n2pnp1/1b1PN3/1p2P3/5Q1p/PPPBBPPP/RN2K2R w KQkq - 2 2",
         &[48]);
     }
 
-    fn test_perft(starting_board: Board, expected: &[usize]) {
+    fn test_perft(fen: &str, expected: &[usize]) {
         let move_generator = MoveGenerator::new();
-        let mut board = starting_board.clone();
+        let mut board = Board::from_fen(fen);
         for depth in 0..expected.len() {
             let timer = Instant::now();
             let result = perft(&move_generator, &mut board, depth + 1, true);
