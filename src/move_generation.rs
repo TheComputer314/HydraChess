@@ -135,10 +135,11 @@ impl MoveGenerator {
                 moves.push(Move::kingside_castle(white));
             }
             let queenside_castle_blocker_mask = if white { 0xe } else { 0xe << 56 };
+            let queenside_castle_danger_mask = if white { 0xc } else { 0xc << 56 };
             if board.queenside_castling_available(white) // If queenside castling available
                 && board.all_pieces() & queenside_castle_blocker_mask == 0 // And no pieces blocking it
                 // And no pieces attacking the squares between the king and the rook
-                && king_danger_mask & queenside_castle_blocker_mask == 0
+                && king_danger_mask & queenside_castle_danger_mask == 0
             {
                 moves.push(Move::queenside_castle(white));
             }
@@ -518,6 +519,12 @@ mod tests {
             Board::from_fen("r3k2r/p1pNqpb1/bn2pnp1/3P4/1p2P3/2N2Q1p/PPPBBPPP/R3K2R b KQkq - 0 1"),
             &[45],
         )
+    }
+
+    #[test]
+    fn perft_kiwipete_c3b1_a6b5() {
+        test_perft(Board::from_fen("r3k2r/p1ppqpb1/1n2pnp1/1b1PN3/1p2P3/5Q1p/PPPBBPPP/RN2K2R w KQkq - 2 2"),
+        &[48]);
     }
 
     fn test_perft(starting_board: Board, expected: &[usize]) {
