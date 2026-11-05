@@ -307,7 +307,7 @@ impl Board {
         }
     }
 
-    /// Makes a non-special move on the board state, assuming that the move is legal.
+    /// Makes a move on the board state, assuming that the move is legal.
     ///
     /// Returns the state of the board's flags before the move was made.
     /// If the move captures a piece, the captured piece is returned. Otherwise, None is returned.
@@ -501,7 +501,7 @@ impl Board {
         (last_flags, capture)
     }
 
-    /// Unmakes a non-special move on the board state.
+    /// Unmakes a move on the board state.
     ///
     /// Takes the last flag and the captured piece type as input.
     pub fn unmake_move(&mut self, mov: &Move, last_flag: u16, capture: &Option<PieceType>) {
