@@ -281,9 +281,15 @@ impl MoveGenerator {
                         {
                             // If target is to the right of the current square
                             if target_file != 0 && i % 8 == target_file - 1 {
-                                moves.push(Move::right_en_passant(i));
+                                let end_mask = if white { mask << 9 } else { mask >> 7 };
+                                if end_mask & block_mask != 0 || capture_mask & (1 << target) != 0 {
+                                    moves.push(Move::right_en_passant(i));
+                                }
                             } else if target_file != 7 && i % 8 == target_file + 1 {
-                                moves.push(Move::left_en_passant(i));
+                                let end_mask = if white { mask << 7 } else { mask >> 9 };
+                                if end_mask & block_mask != 0 || capture_mask & (1 << target) != 0 {
+                                    moves.push(Move::left_en_passant(i));
+                                }
                             }
                         }
                     }
@@ -563,6 +569,30 @@ mod tests {
             "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/P1N2Q2/RPPBBPpP/4K2R b Kkq - 1 2",
             &[53],
         );
+    }
+
+    #[test]
+    fn perft_position3() {
+        test_perft(
+            "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",
+            &[14, 191, 2812, 43238, 674624],
+        );
+    }
+
+    #[test]
+    fn perft_position3_a5a6_h5h7_a6a7() {
+        test_perft(
+            "8/K1p4r/3p4/1P6/1R3p1k/8/4P1P1/8 b - - 3 2",
+            &[14, 207, 3184],
+        )
+    }
+
+    #[test]
+    fn perft_position3_a5a6_h5h7_a6a7_h4h5_g2g4() {
+        test_perft(
+            "8/K1p4r/3p4/1P5k/1R3pP1/8/4P3/8 b - g3 0 3",
+            &[6],
+        )
     }
 
     fn test_perft(fen: &str, expected: &[usize]) {
