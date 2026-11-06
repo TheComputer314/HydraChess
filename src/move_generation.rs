@@ -1,5 +1,4 @@
-use crate::move_generation::mov::PieceType::{Bishop, King, Knight, Pawn, Queen, Rook};
-use crate::move_generation::mov::squares::*;
+use crate::move_generation::mov::PieceType::{Bishop, Knight, Queen, Rook};
 use board_state::Board;
 use mov::Move;
 use move_lookup::MoveLookup;
@@ -406,7 +405,6 @@ impl MoveGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     use std::time::Instant;
 
     #[test]
@@ -451,7 +449,7 @@ mod tests {
     fn perft_starting() {
         test_perft(
             "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-            &[20, 400, 8902, 197281, 4865609],
+            &[20, 400, 8902, 197281, 4865609, 119060324],
         );
     }
 
@@ -593,11 +591,12 @@ mod tests {
         test_perft("8/K1p4r/3p4/1P5k/1R3pP1/8/4P3/8 b - g3 0 3", &[6])
     }
 
+    const TABLE_SIZE: usize = 1 << 20;
+
     fn test_perft(fen: &str, expected: &[usize]) {
         let move_generator = MoveGenerator::new();
         let mut board = Board::from_fen(fen);
-        // TODO: DO NOT USE A HASHMAP IT'S SLOW AS SHIT
-        let mut transposition_tables = vec![HashMap::new(); expected.len()];
+        let mut transposition_tables = vec![vec![(0,0); TABLE_SIZE]; expected.len()];
         for depth in 0..expected.len() {
             let timer = Instant::now();
             let result = perft(
@@ -623,7 +622,7 @@ mod tests {
         move_generator: &MoveGenerator,
         board: &mut Board,
         depth: usize,
-        transposition_tables: &mut Vec<HashMap<u64, usize>>,
+        transposition_tables: &mut Vec<Vec<(u64,usize)>>,
         divide: bool,
     ) -> usize {
         if depth == 0 {
@@ -636,8 +635,10 @@ mod tests {
         let mut total_moves = 0;
         for mov in moves {
             let metadata = board.make_move(&mov);
-            if transposition_tables[depth - 1].contains_key(&board.zobrist_hash) {
-                total_moves += transposition_tables[depth - 1][&board.zobrist_hash];
+            let table_key = board.zobrist_hash as usize % TABLE_SIZE;
+            let (entry_hash, entry_nodes) = transposition_tables[depth - 1][table_key];
+            if entry_hash == board.zobrist_hash {
+                total_moves += entry_nodes;
             } else {
                 let nodes = perft(
                     move_generator,
@@ -650,7 +651,7 @@ mod tests {
                     println!("Move {}: {} nodes", mov, nodes);
                 }
                 total_moves += nodes;
-                transposition_tables[depth - 1].insert(board.zobrist_hash, nodes);
+                transposition_tables[depth - 1][table_key] = (board.zobrist_hash, nodes);
             }
             board.unmake_move(&mov, metadata);
         }
