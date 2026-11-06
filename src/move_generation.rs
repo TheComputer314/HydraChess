@@ -417,31 +417,31 @@ mod tests {
     #[test]
     fn test_bishop_pin() {
         let move_generator = MoveGenerator::new();
-        let mut board = Board::from_fen("7b/8/8/8/8/8/1B6/K7 w - - 0 1");
-        let moves = move_generator.legal_moves(&mut board);
+        let board = Board::from_fen("7b/8/8/8/8/8/1B6/K7 w - - 0 1");
+        let moves = move_generator.legal_moves(&board);
         assert_eq!(moves.len(), 8);
-        let mut board = Board::from_fen("8/8/8/8/8/8/KB5r/8 w - - 0 1");
-        let moves = move_generator.legal_moves(&mut board);
+        let board = Board::from_fen("8/8/8/8/8/8/KB5r/8 w - - 0 1");
+        let moves = move_generator.legal_moves(&board);
         assert_eq!(moves.len(), 4);
-        let mut board = Board::from_fen("8/8/8/8/8/8/KB2b2r/8 w - - 0 1");
-        let moves = move_generator.legal_moves(&mut board);
+        let board = Board::from_fen("8/8/8/8/8/8/KB2b2r/8 w - - 0 1");
+        let moves = move_generator.legal_moves(&board);
         assert_eq!(moves.len(), 13);
-        let mut board = Board::from_fen("8/8/8/5k2/8/8/KB2B2r/8 w - - 0 1");
-        let moves = move_generator.legal_moves(&mut board);
+        let board = Board::from_fen("8/8/8/5k2/8/8/KB2B2r/8 w - - 0 1");
+        let moves = move_generator.legal_moves(&board);
         assert_eq!(moves.len(), 22);
     }
 
     #[test]
     fn test_pawn_pin() {
         let move_generator = MoveGenerator::new();
-        let mut board = Board::from_fen("8/8/8/8/8/8/K1P1r3/8 w - - 0 1");
-        let moves = move_generator.legal_moves(&mut board);
+        let board = Board::from_fen("8/8/8/8/8/8/K1P1r3/8 w - - 0 1");
+        let moves = move_generator.legal_moves(&board);
         assert_eq!(moves.len(), 5);
-        let mut board = Board::from_fen("8/8/8/8/8/K3r3/2P5/8 w - - 0 1");
-        let moves = move_generator.legal_moves(&mut board);
+        let board = Board::from_fen("8/8/8/8/8/K3r3/2P5/8 w - - 0 1");
+        let moves = move_generator.legal_moves(&board);
         assert_eq!(moves.len(), 5);
-        let mut board = Board::from_fen("7k/8/7r/K3pP1r/7r/8/8/8 w - - 0 2");
-        let moves = move_generator.legal_moves(&mut board);
+        let board = Board::from_fen("7k/8/7r/K3pP1r/7r/8/8/8 w - - 0 2");
+        let moves = move_generator.legal_moves(&board);
         assert_eq!(moves.len(), 2);
     }
 
@@ -596,7 +596,7 @@ mod tests {
     fn test_perft(fen: &str, expected: &[usize]) {
         let move_generator = MoveGenerator::new();
         let mut board = Board::from_fen(fen);
-        let mut transposition_tables = vec![vec![(0,0); TABLE_SIZE]; expected.len()];
+        let mut transposition_tables = vec![vec![(0, 0); TABLE_SIZE]; expected.len()];
         for depth in 0..expected.len() {
             let timer = Instant::now();
             let result = perft(
@@ -622,7 +622,7 @@ mod tests {
         move_generator: &MoveGenerator,
         board: &mut Board,
         depth: usize,
-        transposition_tables: &mut Vec<Vec<(u64,usize)>>,
+        transposition_tables: &mut Vec<Vec<(u64, usize)>>,
         divide: bool,
     ) -> usize {
         if depth == 0 {
