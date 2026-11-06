@@ -1,6 +1,10 @@
+mod evaluation;
+
 use super::move_generation::{Board, MoveGenerator};
-use std::io::Write;
-use std::io::stdout;
+use crate::move_generation::mov::Move;
+use crate::search::evaluation::Evaluation;
+use std::io::{Stdout, Write};
+use std::io::{StdoutLock, stdout};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -61,14 +65,69 @@ impl Search {
         println!("Moves played: {}", self.moves_played);
     }
 
-    pub fn search(&mut self, stop_signal: &Arc<AtomicBool>) {
-        // Temp: Random move selection
-        let legal_moves = self.move_generator.legal_moves(&self.board);
-        let mov = legal_moves[rand::random_range(0..legal_moves.len())];
-        self.board.make_move(&mov);
+    pub fn go(&mut self, stop_signal: &Arc<AtomicBool>) {
+        let out = stdout();
+
+        let best_move = self.search(stop_signal, &out);
+        self.board.make_move(&best_move);
         let mut out = stdout().lock();
-        writeln!(out, "bestmove {}", mov).unwrap();
+        writeln!(out, "bestmove {}", best_move).unwrap();
         out.flush().unwrap();
         self.moves_played += 1;
+    }
+
+    fn search(&mut self, stop_signal: &Arc<AtomicBool>, out: &Stdout) -> Move {
+        let legal_moves = self.move_generator.legal_moves(&self.board);
+        if legal_moves.is_empty() {
+            panic!("Attempted to search and eval when we're checkmated")
+        }
+        let color = if self.board.white_to_move() { 1 } else { -1 };
+        let mut scored_moves: Vec<(Move, i64)> = legal_moves
+            .into_iter()
+            .map(|mov| {
+                let metadata = self.board.make_move(&mov);
+                let eval = self.negamax(3, -i64::MAX, i64::MAX, color);
+                self.board.unmake_move(&mov, metadata);
+                (mov, eval)
+            })
+            .collect();
+        scored_moves.sort_by_key(|a| std::cmp::Reverse(a.1));
+        let best_score = scored_moves[0].1;
+
+        let tied_count = scored_moves
+            .iter()
+            .filter(|(_, score)| *score == best_score)
+            .count();
+        let best_move = scored_moves[rand::random_range(0..tied_count)].0;
+
+        let mut lock = out.lock();
+        writeln!(lock, "info depth 3 score cp {}", best_score).unwrap();
+        lock.flush().unwrap();
+
+        best_move
+    }
+
+    fn negamax(&mut self, depth: u16, alpha: i64, beta: i64, color: i64) -> i64 {
+        if depth == 0 {
+            return Evaluation::evaluate(&self.board) * color;
+        }
+
+        let moves = self.move_generator.legal_moves(&self.board);
+        if moves.is_empty() {
+            return i64::MAX;
+        }
+        // TODO: Move ordering
+
+        let mut alpha = alpha;
+        for mov in moves {
+            let metadata = self.board.make_move(&mov);
+            let value = -self.negamax(depth - 1, -beta, -alpha, -color);
+            self.board.unmake_move(&mov, metadata);
+            alpha = alpha.max(value);
+            if alpha >= beta {
+                break;
+            }
+        }
+        alpha
     }
 }

@@ -34,7 +34,7 @@ async fn main() {
         match command {
             "uci" => {
                 let mut out = stdout.lock();
-                writeln!(out, "id name HydraChessRandom").unwrap();
+                writeln!(out, "id name HydraChessV1").unwrap();
                 writeln!(out, "id author Hydra").unwrap();
                 writeln!(out, "uciok").unwrap();
                 out.flush().unwrap();
@@ -113,7 +113,7 @@ fn search_loop(cmd_rx: Receiver<EngineCommand>, stop_signal: Arc<AtomicBool>) {
                 black_increment,
             } => {
                 stop_signal.store(false, Ordering::Relaxed);
-                search.search(&stop_signal);
+                search.go(&stop_signal);
             }
             EngineCommand::Debug => {
                 search.debug();
