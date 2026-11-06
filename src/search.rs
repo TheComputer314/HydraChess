@@ -1,9 +1,8 @@
+use super::move_generation::{Board, MoveGenerator};
 use std::io::Write;
 use std::io::stdout;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use rand::random;
-use super::move_generation::{Board, MoveGenerator};
 
 const TRANSPOSITION_TABLE_SIZE: usize = 1 << 20;
 
@@ -32,16 +31,20 @@ impl Search {
 
     pub fn position(&mut self, string: &str) {
         let parts: Vec<&str> = string.split_whitespace().collect();
+
         if parts[0] == "startpos" {
-            self.board = Board::starting();
+            if self.moves_played == 0 {
+                self.board = Board::starting();
+            }
             if parts.len() > 1 && parts[1] == "moves" {
-                self.position_moves(&parts[2..])
+                self.position_moves(&parts[2..]);
             }
         } else if parts[0] == "fen" {
-            let fen = parts[1..7].join(" ");
-            self.board = Board::from_fen(&fen);
+            if self.moves_played == 0 {
+                self.board = Board::from_fen(&parts[1..7].join(" "));
+            }
             if parts.len() > 7 && parts[7] == "moves" {
-                self.position_moves(&parts[8..])
+                self.position_moves(&parts[8..]);
             }
         }
     }
@@ -51,6 +54,10 @@ impl Search {
             self.board.move_from_string(mov);
             self.moves_played += 1;
         }
+    }
+
+    pub fn print_board(&self) {
+        println!("{}", self.board);
     }
 
     pub fn search(&mut self, stop_signal: &Arc<AtomicBool>) {

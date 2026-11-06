@@ -62,6 +62,9 @@ async fn main() {
                     })
                     .unwrap();
             }
+            "debug" => {
+                cmd_tx.send(EngineCommand::Debug).unwrap();
+            }
             "stop" => {
                 stop_signal.store(true, Ordering::Relaxed);
             }
@@ -89,6 +92,7 @@ enum EngineCommand {
         black_time_left_ms: u64,
         black_increment: u64,
     },
+    Debug,
     Quit,
 }
 
@@ -110,6 +114,9 @@ fn search_loop(cmd_rx: Receiver<EngineCommand>, stop_signal: Arc<AtomicBool>) {
             } => {
                 stop_signal.store(false, Ordering::Relaxed);
                 search.search(&stop_signal);
+            }
+            EngineCommand::Debug => {
+                search.print_board();
             }
             EngineCommand::Quit => break,
         }
