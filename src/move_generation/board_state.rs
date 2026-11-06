@@ -17,10 +17,11 @@ pub struct Board {
     pub rooks: u64,
     pub queens: u64,
     pub kings: u64,
+    /// Halfmove clock
+    halfmove_clock: u8,
     /// Miscellaneous information about the board state.
     ///
     /// From least significant bit:
-    /// - 6 bits: Halfmove clock
     /// - 1 bit: White's kingside castling rights
     /// - 1 bit: White's queenside castling rights
     /// - 1 bit: Black's kingside castling rights
@@ -84,7 +85,16 @@ impl ZobristNumbers {
 // Custom PartialEq impl to only compare Zobrist hashes
 impl PartialEq for Board {
     fn eq(&self, other: &Self) -> bool {
-        self.zobrist_hash == other.zobrist_hash
+        self.white == other.white
+            && self.black == other.black
+            && self.pawns == other.pawns
+            && self.knights == other.knights
+            && self.bishops == other.bishops
+            && self.rooks == other.rooks
+            && self.queens == other.queens
+            && self.kings == other.kings
+            && self.halfmove_clock == other.halfmove_clock
+            && self.flags == other.flags
     }
 }
 
@@ -193,7 +203,7 @@ impl Board {
         let white_to_move = substrings.next().unwrap();
         let castling_rights = substrings.next().unwrap();
         let en_passant_target = substrings.next().unwrap();
-        let halfmove_clock = substrings.next().unwrap();
+        let halfmove_clock = substrings.next().unwrap().parse::<u8>().unwrap();
         // Fullmove clock is disregarded
 
         let zobrist_numbers = ZobristNumbers::new();
@@ -235,26 +245,23 @@ impl Board {
         // Load miscellaneous data
         let mut flags: u16 = 0;
 
-        // Load halfmove clock into first 6 bits
-        flags |= halfmove_clock.parse::<u16>().unwrap();
-
         // Load castling rights into next 4 bits
         for c in castling_rights.chars() {
             match c {
                 'K' => {
-                    flags |= 0b0001 << 6;
+                    flags |= 0b0001;
                     zobrist_hash ^= zobrist_numbers.white_kingside_castling_rights
                 }
                 'Q' => {
-                    flags |= 0b0010 << 6;
+                    flags |= 0b0010;
                     zobrist_hash ^= zobrist_numbers.white_queenside_castling_rights
                 }
                 'k' => {
-                    flags |= 0b0100 << 6;
+                    flags |= 0b0100;
                     zobrist_hash ^= zobrist_numbers.black_kingside_castling_rights
                 }
                 'q' => {
-                    flags |= 0b1000 << 6;
+                    flags |= 0b1000;
                     zobrist_hash ^= zobrist_numbers.black_queenside_castling_rights
                 }
                 _ => {}
@@ -263,7 +270,7 @@ impl Board {
 
         // Load white to move into next bit
         if white_to_move == "w" {
-            flags |= 1 << 10;
+            flags |= 1 << 4;
             zobrist_hash ^= zobrist_numbers.white_to_move;
         }
 
@@ -271,7 +278,7 @@ impl Board {
         let mut en_passant_target = en_passant_target.chars();
         let en_passant_target_file = en_passant_target.next().unwrap();
         if en_passant_target_file != '-' {
-            flags |= 1 << 11;
+            flags |= 1 << 5;
             // Load en passant target into next 4 bits
             let file = match en_passant_target_file {
                 'a' => 0,
@@ -284,10 +291,10 @@ impl Board {
                 'h' => 7,
                 _ => panic!(),
             };
-            flags |= file << 12;
+            flags |= file << 6;
             let en_passant_target_rank = en_passant_target.next().unwrap();
             let white = if en_passant_target_rank == '3' { 1 } else { 0 };
-            flags |= white << 15;
+            flags |= white << 9;
             zobrist_hash ^= zobrist_numbers.en_passant_target[1 - white as usize][file as usize];
         }
 
@@ -301,6 +308,7 @@ impl Board {
             rooks,
             queens,
             kings,
+            halfmove_clock,
             flags,
             zobrist_hash,
             zobrist_numbers,
@@ -324,36 +332,36 @@ impl Board {
     }
 
     pub fn get_halfmove_clock(&self) -> u8 {
-        (self.flags & 0b111111) as u8
+        self.halfmove_clock
     }
 
     pub fn get_castling_rights(&self) -> u8 {
-        ((self.flags >> 6) & 0b1111) as u8
+        (self.flags & 0b1111) as u8
     }
 
     pub fn kingside_castling_available(&self, white: bool) -> bool {
         if white {
-            (self.flags >> 6) & 0b1 == 1
+            self.flags & 0b1 == 1
         } else {
-            (self.flags >> 8) & 0b1 == 1
+            (self.flags >> 2) & 0b1 == 1
         }
     }
 
     pub fn queenside_castling_available(&self, white: bool) -> bool {
         if white {
-            (self.flags >> 7) & 0b1 == 1
+            (self.flags >> 1) & 0b1 == 1
         } else {
-            (self.flags >> 9) & 0b1 == 1
+            (self.flags >> 3) & 0b1 == 1
         }
     }
 
     pub fn white_to_move(&self) -> bool {
-        (self.flags >> 10) & 0b1 == 1
+        (self.flags >> 4) & 0b1 == 1
     }
 
     pub fn en_passant_target(&self) -> Option<u8> {
-        if (self.flags >> 11) & 0b1 == 1 {
-            let target = self.flags >> 12;
+        if (self.flags >> 5) & 0b1 == 1 {
+            let target = self.flags >> 6;
             let file = (target & 0b111) as u8;
             let rank = if target & 0b1000 == 0 { 4 } else { 3 };
             Some(rank * 8 + file)
@@ -434,16 +442,39 @@ impl Board {
     /// Makes a move on the board state, assuming that the move is legal.
     ///
     /// Returns a tuple of:
+    /// - The last halfmove clock
     /// - The last flags
     /// - The last Zobrist hash
     /// - The captured piece type, if any
-    pub fn make_move(&mut self, mov: &Move) -> (u16, u64, Option<PieceType>) {
+    pub fn make_move(&mut self, mov: &Move) -> (u8, u16, u64, Option<PieceType>) {
+        let last_halfmove_clock = self.halfmove_clock;
         let last_zobrist_hash = self.zobrist_hash;
         // Handle special moves
         match mov.flags() {
-            0b0001 => return (self.make_en_passant(&mov), last_zobrist_hash, None),
-            0b0010 => return (self.make_castle(&mov), last_zobrist_hash, None),
-            0b0011 => return (self.make_double_pawn_push(&mov), last_zobrist_hash, None),
+            0b0001 => {
+                return (
+                    last_halfmove_clock,
+                    self.make_en_passant(&mov),
+                    last_zobrist_hash,
+                    None,
+                );
+            }
+            0b0010 => {
+                return (
+                    last_halfmove_clock,
+                    self.make_castle(&mov),
+                    last_zobrist_hash,
+                    None,
+                );
+            }
+            0b0011 => {
+                return (
+                    last_halfmove_clock,
+                    self.make_double_pawn_push(&mov),
+                    last_zobrist_hash,
+                    None,
+                );
+            }
             _ => {}
         };
 
@@ -492,10 +523,10 @@ impl Board {
 
         // If a piece was captured or if the piece to move is a pawn, reset the halfmove clock
         if capture.is_some() || moved_piece == Pawn {
-            self.flags &= !0b111111;
+            self.halfmove_clock = 0;
         } else {
             // Otherwise, increment it
-            self.flags += 1;
+            self.halfmove_clock += 1;
         }
 
         // Remove the captured piece from the board
@@ -615,7 +646,7 @@ impl Board {
         }
 
         // Toggle white to move
-        self.flags ^= 1 << 10;
+        self.flags ^= 1 << 4;
         self.zobrist_hash ^= self.zobrist_numbers.white_to_move;
 
         // Clear en passant flags
@@ -623,72 +654,72 @@ impl Board {
             self.zobrist_hash ^= self.zobrist_numbers.en_passant_target[if white { 1 } else { 0 }]
                 [(target % 8) as usize];
         }
-        self.flags &= !(0b11111 << 11);
+        self.flags &= !(0b11111 << 5);
 
         if white {
-            if self.flags & 1 << 6 != 0 // If white's kingside castling is available,
+            if self.kingside_castling_available(true) // If white's kingside castling is available,
                 // and either the H file rook moved, or the king moved
                 && ((moved_piece == Rook && mov.starting_index() == H1) || moved_piece == King)
             {
                 // Then clear the flag for white's kingside castling
-                self.flags &= !(1 << 6);
+                self.flags &= !1;
                 self.zobrist_hash ^= self.zobrist_numbers.white_kingside_castling_rights;
             }
-            if self.flags & 1 << 7 != 0 // If white's queenside castling is available,
+            if self.queenside_castling_available(true) // If white's queenside castling is available,
                 // and either the A file rook or the king moved
                 && ((moved_piece == Rook && mov.starting_index() == A1) || moved_piece == King)
             {
                 // Then clear the flag for white's queenside castling
-                self.flags &= !(1 << 7);
+                self.flags &= !(1 << 1);
                 self.zobrist_hash ^= self.zobrist_numbers.white_queenside_castling_rights;
             }
-            if self.flags & 1 << 8 != 0 // If black's kingside castling is available, 
+            if self.kingside_castling_available(false) // If black's kingside castling is available,
                 // and we're capturing the rook on H8
             && mov.ending_index() == H8
             {
                 // Then clear the flag for black's kingside castling
-                self.flags &= !(1 << 8);
+                self.flags &= !(1 << 2);
                 self.zobrist_hash ^= self.zobrist_numbers.black_kingside_castling_rights;
             }
-            if self.flags & 1 << 9 != 0 // If black's queenside castling is available,
+            if self.queenside_castling_available(false) // If black's queenside castling is available,
                 // and we're capturing the rook on A8
             && mov.ending_index() == A8
             {
                 // Then clear the flag for black's queenside castling
-                self.flags &= !(1 << 9);
+                self.flags &= !(1 << 3);
                 self.zobrist_hash ^= self.zobrist_numbers.black_queenside_castling_rights;
             }
         } else {
-            if self.flags & 1 << 8 != 0 // If black's kingside castling is available,
+            if self.kingside_castling_available(false) // If black's kingside castling is available,
                 // and either the H file rook moved, or the king moved
                 && ((moved_piece == Rook && mov.starting_index() == H8) || moved_piece == King)
             {
                 // Then clear the flag for black's kingside castling
-                self.flags &= !(1 << 8);
+                self.flags &= !(1 << 2);
                 self.zobrist_hash ^= self.zobrist_numbers.black_kingside_castling_rights;
             }
-            if self.flags & 1 << 9 != 0 // If black's queenside castling is available,
+            if self.queenside_castling_available(false) // If black's queenside castling is available,
                 // and either the A file rook moved, or the king moved
             && ((moved_piece == Rook && mov.starting_index() == A8) || moved_piece == King)
             {
                 // Then clear the flag for black's queenside castling
-                self.flags &= !(1 << 9);
+                self.flags &= !(1 << 3);
                 self.zobrist_hash ^= self.zobrist_numbers.black_queenside_castling_rights;
             }
-            if self.flags & 1 << 6 != 0 // If white's kingside castling is available,
+            if self.kingside_castling_available(true) // If white's kingside castling is available,
             // and we're capturing the rook on H1,
             && mov.ending_index() == H1
             {
                 // Then clear the flag for white's kingside castling
-                self.flags &= !(1 << 6);
+                self.flags &= !1;
                 self.zobrist_hash ^= self.zobrist_numbers.white_kingside_castling_rights;
             }
-            if self.flags & 1 << 7 != 0 // If white's queenside castling is available,
+            if self.queenside_castling_available(true) // If white's queenside castling is available,
             // and we're capturing the rook on A1,
             && mov.ending_index() == A1
             {
                 // Then clear the flag for white's queenside castling
-                self.flags &= !(1 << 7);
+                self.flags &= !(1 << 1);
                 self.zobrist_hash ^= self.zobrist_numbers.white_queenside_castling_rights;
             }
         }
@@ -699,16 +730,17 @@ impl Board {
             "A black and white piece on the same square"
         );
 
-        (last_flags, last_zobrist_hash, capture)
+        (last_halfmove_clock, last_flags, last_zobrist_hash, capture)
     }
 
     /// Unmakes a move on the board state.
     ///
     /// Takes the last flag and the captured piece type as input.
-    pub fn unmake_move(&mut self, mov: &Move, metadata: (u16, u64, Option<PieceType>)) {
-        let (last_flag, last_zobrist_hash, capture) = metadata;
+    pub fn unmake_move(&mut self, mov: &Move, metadata: (u8, u16, u64, Option<PieceType>)) {
+        let (last_halfmove_clock, last_flags, last_zobrist_hash, capture) = metadata;
+        self.halfmove_clock = last_halfmove_clock;
         self.zobrist_hash = last_zobrist_hash;
-        self.flags = last_flag;
+        self.flags = last_flags;
         match mov.flags() {
             0b0001 => return self.unmake_en_passant(mov),
             0b0010 => return self.unmake_castle(mov),
@@ -844,18 +876,18 @@ impl Board {
             [(mov.starting_index() % 8) as usize];
 
         // Reset halfmove clock
-        self.flags &= !0b111111;
+        self.halfmove_clock = 0;
         // Toggle white to move
-        self.flags ^= 1 << 10;
+        self.flags ^= 1 << 4;
         self.zobrist_hash ^= self.zobrist_numbers.white_to_move;
         // Clear en passant flags
-        self.flags &= !(0b11111 << 11);
+        self.flags &= !(0b11111 << 5);
         // Flag en passant
-        self.flags |= 1 << 11;
+        self.flags |= 1 << 5;
         // Flag file
-        self.flags |= ((mov.starting_index() % 8) as u16) << 12;
+        self.flags |= ((mov.starting_index() % 8) as u16) << 6;
         // Flag rank
-        self.flags |= if white { 1 << 15 } else { 0 };
+        self.flags |= if white { 1 << 9 } else { 0 };
 
         last_flag
     }
@@ -928,12 +960,12 @@ impl Board {
         let flags = self.flags;
 
         // Reset halfmove clock
-        self.flags &= !0b111111;
+        self.halfmove_clock = 0;
         // Toggle white to move
-        self.flags ^= 1 << 10;
+        self.flags ^= 1 << 4;
         self.zobrist_hash ^= self.zobrist_numbers.white_to_move;
         // Clear en passant flags
-        self.flags &= !(0b11111 << 11);
+        self.flags &= !(0b11111 << 5);
 
         flags
     }
@@ -1028,19 +1060,19 @@ impl Board {
         }
 
         // Increment halfmove clock
-        self.flags += 1;
+        self.halfmove_clock += 1;
         // Toggle white to move
-        self.flags ^= 1 << 10;
+        self.flags ^= 1 << 4;
         self.zobrist_hash ^= self.zobrist_numbers.white_to_move;
         // Clear en passant flags
-        self.flags &= !(0b11111 << 11);
+        self.flags &= !(0b11111 << 5);
 
         if white {
-            self.flags &= !((1 << 6) + (1 << 7));
+            self.flags &= !0b11;
             self.zobrist_hash ^= self.zobrist_numbers.white_kingside_castling_rights;
             self.zobrist_hash ^= self.zobrist_numbers.white_queenside_castling_rights;
         } else {
-            self.flags &= !((1 << 8) + (1 << 9));
+            self.flags &= !0b1100;
             self.zobrist_hash ^= self.zobrist_numbers.black_kingside_castling_rights;
             self.zobrist_hash ^= self.zobrist_numbers.black_queenside_castling_rights;
         }
@@ -1240,7 +1272,7 @@ mod tests {
         let board =
             Board::from_fen("rnbqkbnr/pp1p1ppp/8/1Pp1p3/8/8/P1PPPPPP/RNBQKBNR w KQkq c6 0 3");
         assert!(board.en_passant_target().is_some());
-        assert_eq!(board.en_passant_target().unwrap(), 42);
+        assert_eq!(board.en_passant_target().unwrap(), 34);
     }
 
     #[test]
