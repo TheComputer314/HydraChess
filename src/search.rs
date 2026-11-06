@@ -51,7 +51,7 @@ impl Search {
 
     fn position_moves(&mut self, moves: &[&str]) {
         for mov in &moves[self.moves_played..] {
-            self.board.move_from_string(mov);
+            self.board.move_from_uci_lan(mov);
             self.moves_played += 1;
         }
     }

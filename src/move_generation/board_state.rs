@@ -371,7 +371,7 @@ impl Board {
     }
 
     /// Parse a UCI Long Algebraic Notation move string, and apply that move to the board.
-    pub fn move_from_string(&mut self, mov: &str) {
+    pub fn move_from_uci_lan(&mut self, mov: &str) {
         let mut chars = mov.chars();
         let start_file = chars.next().unwrap() as u8 - b'a';
         let start_rank = chars.next().unwrap() as u8 - b'1';
@@ -398,9 +398,9 @@ impl Board {
                     let target_rank = target / 8;
                     if start_rank == target_rank {
                         let target_file = target % 8;
-                        if start_file != 0 && start_file - 1 == target_file && end_square == target {
+                        if start_file != 0 && start_file - 1 == target_file && end_file == target_file {
                             mov = Move::left_en_passant(start_square);
-                        } else if start_file != 7 && start_file + 1 == target_file && end_square == target {
+                        } else if start_file != 7 && start_file + 1 == target_file && end_file == target_file {
                             mov = Move::right_en_passant(start_square);
                         } else {
                             mov = Move::regular(start_square, end_square);

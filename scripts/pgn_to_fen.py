@@ -8,4 +8,4 @@ if __name__ == "__main__":
     pgn_string = sys.stdin.read()
     pgn = chess.pgn.read_game(io.StringIO(pgn_string))
     uci_moves = [move.uci() for move in pgn.mainline_moves()]
-    print(" ".join(uci_moves))
+    print("\n" + " ".join(uci_moves))
