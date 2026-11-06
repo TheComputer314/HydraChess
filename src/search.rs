@@ -11,6 +11,7 @@ pub struct Search {
     board: Board,
     move_generator: MoveGenerator,
     transposition_table: Vec<u8>,
+    moves_played: usize,
 }
 
 impl Search {
@@ -19,12 +20,14 @@ impl Search {
             board: Board::starting(),
             move_generator: MoveGenerator::new(),
             transposition_table: vec![0; TRANSPOSITION_TABLE_SIZE],
+            moves_played: 0,
         }
     }
 
     pub fn new_game(&mut self) {
         self.board = Board::starting();
         self.transposition_table = vec![0; TRANSPOSITION_TABLE_SIZE];
+        self.moves_played = 0;
     }
 
     pub fn position(&mut self, string: &str) {
@@ -44,8 +47,9 @@ impl Search {
     }
 
     fn position_moves(&mut self, moves: &[&str]) {
-        for mov in moves {
+        for mov in &moves[self.moves_played..] {
             self.board.move_from_string(mov);
+            self.moves_played += 1;
         }
     }
 
@@ -53,9 +57,10 @@ impl Search {
         // Temp: Random move selection
         let legal_moves = self.move_generator.legal_moves(&self.board);
         let mov = legal_moves[rand::random_range(0..legal_moves.len())];
-        self.board.move_from_string(&mov.to_string());
+        self.board.make_move(&mov);
         let mut out = stdout().lock();
         writeln!(out, "bestmove {}", mov).unwrap();
         out.flush().unwrap();
+        self.moves_played += 1;
     }
 }
