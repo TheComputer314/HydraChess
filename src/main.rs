@@ -5,6 +5,7 @@ use std::io::{self, BufRead, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, channel};
+use crate::search::Search;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
@@ -92,13 +93,14 @@ enum EngineCommand {
 }
 
 fn search_loop(cmd_rx: Receiver<EngineCommand>, stop_signal: Arc<AtomicBool>) {
+    let mut search = Search::new();
     while let Ok(cmd) = cmd_rx.recv() {
         match cmd {
             EngineCommand::NewGame => {
-                // TODO
+                search.new_game();
             }
             EngineCommand::Position { position } => {
-                // TODO
+                search.position(&position);
             }
             EngineCommand::Go {
                 white_time_left_ms,
@@ -107,14 +109,7 @@ fn search_loop(cmd_rx: Receiver<EngineCommand>, stop_signal: Arc<AtomicBool>) {
                 black_increment,
             } => {
                 stop_signal.store(false, Ordering::Relaxed);
-                // TODO: Search
-                loop {
-                    // print!("searching");
-                    if stop_signal.load(Ordering::Relaxed) {
-                        println!("bestmove a1a1"); // Test
-                        break;
-                    }
-                }
+                search.search(&stop_signal);
             }
             EngineCommand::Quit => break,
         }

@@ -1,11 +1,11 @@
 use crate::move_generation::mov::PieceType::{Bishop, Knight, Queen, Rook};
-use board_state::Board;
+pub(crate) use board_state::Board;
 use mov::Move;
 use move_lookup::MoveLookup;
 
-mod board_state;
-mod mov;
-mod move_lookup;
+pub mod board_state;
+pub mod mov;
+pub mod move_lookup;
 
 pub struct MoveGenerator {
     lookup: MoveLookup,
@@ -18,7 +18,7 @@ impl MoveGenerator {
         }
     }
 
-    pub fn legal_moves(&self, board: &mut Board) -> Vec<Move> {
+    pub fn legal_moves(&self, board: &Board) -> Vec<Move> {
         let white = board.white_to_move();
         let friendly_pieces = if white { board.white } else { board.black };
         let enemy_pieces = if white { board.black } else { board.white };

@@ -362,6 +362,75 @@ impl Board {
         }
     }
 
+    /// Parse a UCI Long Algebraic Notation move string, and apply that move to the board.
+    pub fn move_from_string(&mut self, mov: &str) {
+        let mut chars = mov.chars();
+        let start_file = chars.next().unwrap() as u8 - b'a';
+        let start_rank = chars.next().unwrap() as u8 - b'1';
+        let end_file = chars.next().unwrap() as u8 - b'a';
+        let end_rank = chars.next().unwrap() as u8 - b'1';
+        let start_square = start_rank * 8 + start_file;
+        let end_square = end_rank * 8 + end_file;
+        let mov;
+        if self.pawns & mask(start_square) != 0 {
+            if start_rank == 1 && end_rank == 3 {
+                mov = Move::double_pawn_push(start_square);
+            } else if start_rank == 6 && end_rank == 4 {
+                mov = Move::double_pawn_push(start_square);
+            } else if let Some(char) = chars.next() {
+                match char {
+                    'n' => mov = Move::pawn_promotion(start_square, end_square, Knight),
+                    'b' => mov = Move::pawn_promotion(start_square, end_square, Bishop),
+                    'r' => mov = Move::pawn_promotion(start_square, end_square, Rook),
+                    'q' => mov = Move::pawn_promotion(start_square, end_square, Queen),
+                    _ => panic!("Invalid promotion character"),
+                }
+            } else {
+                if let Some(target) = self.en_passant_target() {
+                    let target_rank = target / 8;
+                    if start_rank == target_rank {
+                        let target_file = target % 8;
+                        if start_file != 0 && start_file - 1 == target_file {
+                            mov = Move::left_en_passant(start_square);
+                        } else if start_file != 7 && start_file + 1 == target_file {
+                            mov = Move::right_en_passant(start_square);
+                        } else {
+                            mov = Move::regular(start_square, end_square);
+                        }
+                    } else {
+                        mov = Move::regular(start_square, end_square);
+                    }
+                } else {
+                    mov = Move::regular(start_square, end_square);
+                }
+            }
+        } else if self.kings & mask(start_square) != 0 {
+            if self.kingside_castling_available(true) && start_square == E1 && end_square == G1 {
+                mov = Move::kingside_castle(true);
+            } else if self.queenside_castling_available(true)
+                && start_square == E1
+                && end_square == C1
+            {
+                mov = Move::queenside_castle(true);
+            } else if self.kingside_castling_available(false)
+                && start_square == E8
+                && end_square == G8
+            {
+                mov = Move::kingside_castle(false);
+            } else if self.queenside_castling_available(false)
+                && start_square == E8
+                && end_square == C8
+            {
+                mov = Move::queenside_castle(false);
+            } else {
+                mov = Move::regular(start_square, end_square);
+            }
+        } else {
+            mov = Move::regular(start_square, end_square);
+        }
+        self.make_move(&mov);
+    }
+
     /// Makes a move on the board state, assuming that the move is legal.
     ///
     /// Returns a tuple of:
@@ -933,8 +1002,10 @@ impl Board {
                 self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash[D8 as usize][1][3];
             }
         }
-        self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash[mov.starting_index() as usize][!white as usize][5];
-        self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash[mov.ending_index() as usize][!white as usize][5];
+        self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash[mov.starting_index() as usize]
+            [!white as usize][5];
+        self.zobrist_hash ^=
+            self.zobrist_numbers.piece_square_hash[mov.ending_index() as usize][!white as usize][5];
 
         self.kings &= !king_start_mask;
         self.kings |= king_end_mask;
