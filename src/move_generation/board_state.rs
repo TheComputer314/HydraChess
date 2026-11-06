@@ -394,7 +394,7 @@ impl Board {
                     _ => panic!("Invalid promotion character"),
                 }
             } else {
-                if let Some(target) = self.en_passant_target() {
+                if start_file != end_file && let Some(target) = self.en_passant_target() {
                     let target_rank = target / 8;
                     if start_rank == target_rank {
                         let target_file = target % 8;
@@ -496,7 +496,10 @@ impl Board {
         } else if start_mask & self.kings != 0 {
             King
         } else {
-            panic!("No piece at the start square");
+            panic!("Move {:?} at position {:?} has no piece at the start square",
+                mov.to_string(),
+                self.to_string()
+            );
         };
         // Get color of piece
         let white = start_mask & self.white != 0;
