@@ -56,8 +56,9 @@ impl Search {
         }
     }
 
-    pub fn print_board(&self) {
-        println!("{}", self.board);
+    pub fn debug(&self) {
+        println!("Board: {}", self.board);
+        println!("Moves played: {}", self.moves_played);
     }
 
     pub fn search(&mut self, stop_signal: &Arc<AtomicBool>) {

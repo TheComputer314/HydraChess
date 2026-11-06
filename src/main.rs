@@ -116,7 +116,7 @@ fn search_loop(cmd_rx: Receiver<EngineCommand>, stop_signal: Arc<AtomicBool>) {
                 search.search(&stop_signal);
             }
             EngineCommand::Debug => {
-                search.print_board();
+                search.debug();
             }
             EngineCommand::Quit => break,
         }
