@@ -3,10 +3,12 @@ mod evaluation;
 use super::move_generation::{Board, MoveGenerator};
 use crate::move_generation::mov::Move;
 use crate::search::evaluation::Evaluation;
+use rand::random_range;
 use std::io::{Stdout, Write};
 use std::io::{StdoutLock, stdout};
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 
 const TRANSPOSITION_TABLE_SIZE: usize = 1 << 20;
 
@@ -82,29 +84,29 @@ impl Search {
             panic!("Attempted to search and eval when we're checkmated")
         }
         let color = if self.board.white_to_move() { 1 } else { -1 };
-        let mut scored_moves: Vec<(Move, i64)> = legal_moves
-            .into_iter()
-            .map(|mov| {
-                let metadata = self.board.make_move(&mov);
-                let eval = self.negamax(3, -i64::MAX, i64::MAX, color);
-                self.board.unmake_move(&mov, metadata);
-                (mov, eval)
-            })
-            .collect();
-        scored_moves.sort_by_key(|a| std::cmp::Reverse(a.1));
-        let best_score = scored_moves[0].1;
+        let mut best_score = -i64::MAX;
+        let mut best_move = &legal_moves[random_range(0..legal_moves.len())];
+        let max_depth = 10;
+        let timer = Instant::now();
+        'iterative_deepening: for depth in 1..(max_depth + 1) {
+            for mov in &legal_moves {
+                let metadata = self.board.make_move(mov);
+                let eval = self.negamax(depth, -i64::MAX, i64::MAX, color);
+                self.board.unmake_move(mov, metadata);
+                if eval > best_score {
+                    best_score = eval;
+                    best_move = mov;
+                    let mut lock = out.lock();
+                    writeln!(lock, "info depth {} score cp {}", depth, best_score).unwrap();
+                    lock.flush().unwrap();
+                }
+                if timer.elapsed().as_secs() > 5 { // TODO: Do actual time management
+                    break 'iterative_deepening;
+                }
+            }
+        }
 
-        let tied_count = scored_moves
-            .iter()
-            .filter(|(_, score)| *score == best_score)
-            .count();
-        let best_move = scored_moves[rand::random_range(0..tied_count)].0;
-
-        let mut lock = out.lock();
-        writeln!(lock, "info depth 3 score cp {}", best_score).unwrap();
-        lock.flush().unwrap();
-
-        best_move
+        *best_move
     }
 
     fn negamax(&mut self, depth: u16, alpha: i64, beta: i64, color: i64) -> i64 {
