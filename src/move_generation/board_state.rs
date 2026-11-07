@@ -538,7 +538,7 @@ impl Board {
             self.halfmove_clock = 0;
         } else {
             // Otherwise, increment it
-            self.halfmove_clock += 1;
+            self.halfmove_clock = self.halfmove_clock.saturating_add(1);
         }
 
         // Remove the captured piece from the board
@@ -1072,7 +1072,7 @@ impl Board {
         }
 
         // Increment halfmove clock
-        self.halfmove_clock += 1;
+        self.halfmove_clock = self.halfmove_clock.saturating_add(1);
         // Toggle white to move
         self.flags ^= 1 << 4;
         self.zobrist_hash ^= self.zobrist_numbers.white_to_move;

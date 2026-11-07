@@ -39,16 +39,14 @@ impl Search {
         let parts: Vec<&str> = string.split_whitespace().collect();
 
         if parts[0] == "startpos" {
-            if self.moves_played == 0 {
-                self.board = Board::starting();
-            }
+            self.board = Board::starting();
+            self.moves_played = 0;
             if parts.len() > 1 && parts[1] == "moves" {
                 self.position_moves(&parts[2..]);
             }
         } else if parts[0] == "fen" {
-            if self.moves_played == 0 {
-                self.board = Board::from_fen(&parts[1..7].join(" "));
-            }
+            self.board = Board::from_fen(&parts[1..7].join(" "));
+            self.moves_played = 0;
             if parts.len() > 7 && parts[7] == "moves" {
                 self.position_moves(&parts[8..]);
             }
@@ -56,7 +54,7 @@ impl Search {
     }
 
     fn position_moves(&mut self, moves: &[&str]) {
-        for mov in &moves[self.moves_played..] {
+        for mov in moves {
             self.board.move_from_uci_lan(mov);
             self.moves_played += 1;
         }
