@@ -151,16 +151,24 @@ impl Search {
         if moves.is_empty() {
             return i64::MAX;
         }
-        // TODO: Move ordering
+        let mut sorted_moves: Vec<(&Move, i64)> = Vec::with_capacity(moves.len());
+        for i in 0..moves.len() {
+            let mov = &moves[i];
+            let metadata = self.board.make_move(mov);
+            sorted_moves.push((mov, Evaluation::evaluate(&self.board) * color));
+            self.board.unmake_move(mov, metadata);
+        }
+        sorted_moves.sort_by_key(|mov| mov.1);
 
         let mut alpha = alpha;
-        for mov in moves {
+        for mov in sorted_moves {
+            let mov = mov.0;
             if !time_ok() {
                 return 0;
             }
-            let metadata = self.board.make_move(&mov);
+            let metadata = self.board.make_move(mov);
             let value = -self.negamax(depth - 1, -beta, -alpha, -color, time_ok);
-            self.board.unmake_move(&mov, metadata);
+            self.board.unmake_move(mov, metadata);
             alpha = alpha.max(value);
             if alpha >= beta {
                 break;
