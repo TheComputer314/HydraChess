@@ -114,19 +114,19 @@ impl Search {
         }
         let color = if self.board.white_to_move() { 1 } else { -1 };
         let mut best_move = &legal_moves[0];
-        let max_depth = 3;
+        let max_depth = 5;
         let timer = Instant::now();
         let time_ok = || {
             !stop_signal.load(Relaxed)
                 && timer.elapsed().as_millis() < (time_left_ms / 20 + increment / 2)
         };
-        'iterative_deepening: for depth in 0..(max_depth + 1) {
+        'iterative_deepening: for depth in 1..(max_depth + 1) {
             let mut depth_best_score = -i64::MAX;
             let mut depth_best_move = best_move;
             for mov in &legal_moves {
                 let metadata = self.board.make_move(mov);
                 {
-                    let eval = self.negamax(depth, -i64::MAX, i64::MAX, color, &time_ok);
+                    let eval = -self.negamax(depth, -i64::MAX, i64::MAX, -color, &time_ok);
                     self.board.unmake_move(mov, metadata);
                     if eval > depth_best_score {
                         depth_best_score = eval;
@@ -173,7 +173,7 @@ impl Search {
                     _ => {}
                 }
                 if alpha >= beta {
-                    return alpha;
+                    return tt_result.score;
                 }
             }
         }
@@ -187,18 +187,20 @@ impl Search {
         }
         let sorted_moves = self.sort_moves(&moves, tt_move, color);
 
+        let mut best_value = -i64::MAX;
         let mut best_move = sorted_moves[0];
         for mov in sorted_moves {
             if !time_ok() {
-                break;
+                return 0;
             }
             let metadata = self.board.make_move(&mov);
             let value = -self.negamax(depth - 1, -beta, -alpha, -color, time_ok);
             self.board.unmake_move(&mov, metadata);
-            if value > alpha {
-                alpha = value;
+            if value > best_value {
+                best_value = value;
                 best_move = mov;
             }
+            alpha = alpha.max(best_value);
             if alpha >= beta {
                 break;
             }
@@ -227,9 +229,7 @@ impl Search {
             {
                 value = 1 << 10;
             } else {
-                let metadata = self.board.make_move(mov);
-                value = Evaluation::evaluate(&self.board) * color;
-                self.board.unmake_move(mov, metadata);
+                value = 0; // TODO: Implement MVV-LVA
             }
             sorted_moves.push((mov, value));
         }
