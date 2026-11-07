@@ -15,6 +15,17 @@ pub struct EntryResult {
     pub best_move: Move,
 }
 
+impl EntryResult {
+    pub fn new(depth: u16, score: i64, node_type: i8, best_move: Move) -> Self {
+        Self {
+            score,
+            depth,
+            node_type,
+            best_move,
+        }
+    }
+}
+
 pub struct TranspositionTable {
     size: usize,
     table: Vec<Entry>,

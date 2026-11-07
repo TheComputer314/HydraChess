@@ -1,4 +1,4 @@
-use crate::move_generation::mov::PieceType::{Bishop, Knight, Queen, Rook};
+use crate::move_generation::mov::PieceType::{Bishop, King, Knight, Queen, Rook};
 pub(crate) use board_state::Board;
 use mov::Move;
 use move_lookup::MoveLookup;
@@ -27,60 +27,8 @@ impl MoveGenerator {
         // King is not included in the blockers, so that the king can't block a
         // move that would leave it in check post-move
         let blockers = board.all_pieces() & !king_mask;
-        // For every enemy piece, create a mask of the squares it attacks
-        // If the king is currently sitting in an attacked square, it is in check
-        let mut king_danger_mask: u64 = 0;
-        let mut checkers = 0;
-        let mut checker_index = 0;
-        for i in MoveGenerator::get_indices_of_bits(enemy_pieces) {
-            let mask = 1 << i;
-            if board.pawns & mask != 0 {
-                let mut pawn_danger_mask = 0;
-                let backwards = if white { i - 8 } else { i + 8 };
-                if i % 8 != 0 {
-                    pawn_danger_mask |= 1 << (backwards - 1);
-                }
-                if i % 8 != 7 {
-                    pawn_danger_mask |= 1 << (backwards + 1);
-                }
-                if king_mask & pawn_danger_mask != 0 {
-                    checkers += 1;
-                    checker_index = i;
-                }
-                king_danger_mask |= pawn_danger_mask;
-            } else if board.knights & mask != 0 {
-                let possible_knight_moves = self.lookup.possible_knight_moves(i);
-                if king_mask & possible_knight_moves != 0 {
-                    checkers += 1;
-                    checker_index = i;
-                }
-                king_danger_mask |= possible_knight_moves;
-            } else if board.bishops & mask != 0 {
-                let possible_bishop_moves = self.lookup.possible_bishop_moves(i, blockers);
-                if king_mask & possible_bishop_moves != 0 {
-                    checkers += 1;
-                    checker_index = i;
-                }
-                king_danger_mask |= possible_bishop_moves;
-            } else if board.rooks & mask != 0 {
-                let possible_rook_moves = self.lookup.possible_rook_moves(i, blockers);
-                if king_mask & possible_rook_moves != 0 {
-                    checkers += 1;
-                    checker_index = i;
-                }
-                king_danger_mask |= possible_rook_moves;
-            } else if board.queens & mask != 0 {
-                let possible_queen_moves = self.lookup.possible_queen_moves(i, blockers);
-                if king_mask & possible_queen_moves != 0 {
-                    checkers += 1;
-                    checker_index = i;
-                }
-                king_danger_mask |= possible_queen_moves;
-            } else if board.kings & mask != 0 {
-                // Kings can't attack each other legally, so no need to handle checkers counting for that
-                king_danger_mask |= self.lookup.possible_king_moves(i);
-            }
-        }
+        let (king_danger_mask, checkers, checker_index) =
+            self.king_danger_mask(board, white, enemy_pieces, king_mask, blockers);
 
         let mut moves = Vec::new();
 
@@ -393,6 +341,81 @@ impl MoveGenerator {
         }
 
         moves
+    }
+
+    pub fn king_in_check(&self, board: &Board) -> bool {
+        let white = board.white_to_move();
+        let king_mask = board.get_bitboard(white, King);
+        let enemy_pieces = if white { board.black } else { board.white };
+        let blockers = board.all_pieces() & !king_mask;
+        let (_, checkers, _) =
+            self.king_danger_mask(board, white, enemy_pieces, king_mask, blockers);
+        checkers != 0
+    }
+
+    fn king_danger_mask(
+        &self,
+        board: &Board,
+        white: bool,
+        enemy_pieces: u64,
+        king_mask: u64,
+        blockers: u64,
+    ) -> (u64, i32, u8) {
+        // For every enemy piece, create a mask of the squares it attacks
+        // If the king is currently sitting in an attacked square, it is in check
+        let mut king_danger_mask: u64 = 0;
+        let mut checkers = 0;
+        let mut checker_index = 0;
+        for i in MoveGenerator::get_indices_of_bits(enemy_pieces) {
+            let mask = 1 << i;
+            if board.pawns & mask != 0 {
+                let mut pawn_danger_mask = 0;
+                let backwards = if white { i - 8 } else { i + 8 };
+                if i % 8 != 0 {
+                    pawn_danger_mask |= 1 << (backwards - 1);
+                }
+                if i % 8 != 7 {
+                    pawn_danger_mask |= 1 << (backwards + 1);
+                }
+                if king_mask & pawn_danger_mask != 0 {
+                    checkers += 1;
+                    checker_index = i;
+                }
+                king_danger_mask |= pawn_danger_mask;
+            } else if board.knights & mask != 0 {
+                let possible_knight_moves = self.lookup.possible_knight_moves(i);
+                if king_mask & possible_knight_moves != 0 {
+                    checkers += 1;
+                    checker_index = i;
+                }
+                king_danger_mask |= possible_knight_moves;
+            } else if board.bishops & mask != 0 {
+                let possible_bishop_moves = self.lookup.possible_bishop_moves(i, blockers);
+                if king_mask & possible_bishop_moves != 0 {
+                    checkers += 1;
+                    checker_index = i;
+                }
+                king_danger_mask |= possible_bishop_moves;
+            } else if board.rooks & mask != 0 {
+                let possible_rook_moves = self.lookup.possible_rook_moves(i, blockers);
+                if king_mask & possible_rook_moves != 0 {
+                    checkers += 1;
+                    checker_index = i;
+                }
+                king_danger_mask |= possible_rook_moves;
+            } else if board.queens & mask != 0 {
+                let possible_queen_moves = self.lookup.possible_queen_moves(i, blockers);
+                if king_mask & possible_queen_moves != 0 {
+                    checkers += 1;
+                    checker_index = i;
+                }
+                king_danger_mask |= possible_queen_moves;
+            } else if board.kings & mask != 0 {
+                // Kings can't attack each other legally, so no need to handle checkers counting for that
+                king_danger_mask |= self.lookup.possible_king_moves(i);
+            }
+        }
+        (king_danger_mask, checkers, checker_index)
     }
 
     fn get_indices_of_bits(bits: u64) -> Vec<u8> {

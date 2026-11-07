@@ -4,7 +4,8 @@ mod transposition_table;
 use super::move_generation::{Board, MoveGenerator};
 use crate::move_generation::mov::Move;
 use crate::search::evaluation::Evaluation;
-use crate::search::transposition_table::TranspositionTable;
+use crate::search::transposition_table::{EntryResult, TranspositionTable};
+use std::cmp::Reverse;
 use std::io::stdout;
 use std::io::{Stdout, Write};
 use std::sync::Arc;
@@ -157,33 +158,82 @@ impl Search {
             return Evaluation::evaluate(&self.board) * color;
         }
 
+        let alpha_original = alpha;
+        let mut alpha = alpha;
+        let mut beta = beta;
+        let tt_result = self.transposition_table.get(self.board.zobrist_hash);
+        let mut tt_move = None;
+        if let Some(tt_result) = tt_result {
+            tt_move = Some(tt_result.best_move);
+            if tt_result.depth >= depth {
+                match tt_result.node_type {
+                    1 => beta = beta.min(tt_result.score),    // Upper bound
+                    0 => return tt_result.score,              // Exact
+                    -1 => alpha = alpha.max(tt_result.score), // Lower bound
+                    _ => {}
+                }
+                if alpha >= beta {
+                    return alpha;
+                }
+            }
+        }
+
         let moves = self.move_generator.legal_moves(&self.board);
         if moves.is_empty() {
-            return -i64::MAX;
-        }
-        let mut sorted_moves: Vec<(&Move, i64)> = Vec::with_capacity(moves.len());
-        for i in 0..moves.len() {
-            let mov = &moves[i];
-            let metadata = self.board.make_move(mov);
-            sorted_moves.push((mov, Evaluation::evaluate(&self.board) * color));
-            self.board.unmake_move(mov, metadata);
-        }
-        sorted_moves.sort_by_key(|mov| mov.1);
-
-        let mut alpha = alpha;
-        for mov in sorted_moves {
-            let mov = mov.0;
-            if !time_ok() {
-                return 0;
+            if self.move_generator.king_in_check(&self.board) {
+                return -i64::MAX / 2;
             }
-            let metadata = self.board.make_move(mov);
+            return 0;
+        }
+        let sorted_moves = self.sort_moves(&moves, tt_move, color);
+
+        let mut best_move = sorted_moves[0];
+        for mov in sorted_moves {
+            if !time_ok() {
+                break;
+            }
+            let metadata = self.board.make_move(&mov);
             let value = -self.negamax(depth - 1, -beta, -alpha, -color, time_ok);
-            self.board.unmake_move(mov, metadata);
-            alpha = alpha.max(value);
+            self.board.unmake_move(&mov, metadata);
+            if value > alpha {
+                alpha = value;
+                best_move = mov;
+            }
             if alpha >= beta {
                 break;
             }
         }
+
+        let node_type = if alpha <= alpha_original {
+            1
+        } else if alpha >= beta {
+            -1
+        } else {
+            0
+        };
+        self.transposition_table.insert(
+            self.board.zobrist_hash,
+            EntryResult::new(depth, alpha, node_type, best_move),
+        );
         alpha
+    }
+
+    fn sort_moves(&mut self, moves: &Vec<Move>, tt_move: Option<Move>, color: i64) -> Vec<Move> {
+        let mut sorted_moves: Vec<(&Move, i64)> = Vec::with_capacity(moves.len());
+        for mov in moves {
+            let value;
+            if let Some(tt_move) = tt_move
+                && &tt_move == mov
+            {
+                value = 1 << 10;
+            } else {
+                let metadata = self.board.make_move(mov);
+                value = Evaluation::evaluate(&self.board) * color;
+                self.board.unmake_move(mov, metadata);
+            }
+            sorted_moves.push((mov, value));
+        }
+        sorted_moves.sort_by_key(|mov| Reverse(mov.1));
+        sorted_moves.iter().map(|mov| *mov.0).collect()
     }
 }
