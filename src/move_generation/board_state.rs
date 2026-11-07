@@ -363,7 +363,7 @@ impl Board {
         if (self.flags >> 5) & 0b1 == 1 {
             let target = self.flags >> 6;
             let file = (target & 0b111) as u8;
-            let rank = if target & 0b1000 == 0 { 4 } else { 3 };
+            let rank = if target & 0b1000 == 0 { 5 } else { 2 };
             Some(rank * 8 + file)
         } else {
             None
@@ -398,7 +398,7 @@ impl Board {
                     && let Some(target) = self.en_passant_target()
                 {
                     let target_rank = target / 8;
-                    if start_rank == target_rank {
+                    if start_rank.abs_diff(target_rank) == 1 {
                         let target_file = target % 8;
                         if start_file != 0
                             && start_file - 1 == target_file
@@ -1134,7 +1134,7 @@ impl Board {
 
 #[cfg(test)]
 mod tests {
-    use super::super::mov::squares::{A1, A2, A3, A7, B8, C3, E4, E5};
+    use super::super::mov::squares::{A1, A2, A3, A7, B8, C3, C6, E4, E5};
     use super::super::mov::{Move, PieceType};
     use super::Board;
 
@@ -1284,7 +1284,13 @@ mod tests {
         let board =
             Board::from_fen("rnbqkbnr/pp1p1ppp/8/1Pp1p3/8/8/P1PPPPPP/RNBQKBNR w KQkq c6 0 3");
         assert!(board.en_passant_target().is_some());
-        assert_eq!(board.en_passant_target().unwrap(), 34);
+        assert_eq!(board.en_passant_target().unwrap(), C6);
+
+        assert_eq!(
+            Board::from_fen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1")
+                .to_string(),
+            "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"
+        );
     }
 
     #[test]

@@ -267,26 +267,31 @@ impl MoveGenerator {
                     // If en passant is possible
                     if let Some(target) = board.en_passant_target() {
                         let target_file = target % 8;
-                        let target_rank = target / 8;
-                        if i / 8 == target_rank // If pawn is at the same rank as the target
-                            && (king_index / 8 != target_rank // And either the king is not on the same rank
+                        let capture_square = if white { target - 8 } else { target + 8 };
+                        let capture_rank = capture_square / 8;
+                        if i / 8 == capture_rank // If pawn is at the same rank as the captured pawn
+                            && (king_index / 8 != capture_rank // And either the king is not on the same rank
                                 || (self.lookup.possible_rook_moves(
                                     king_index,
-                            // Or: excluding this pawn and the target from blockers,
-                                    board.all_pieces() & !mask & !(1 << target),
-                                ) & 0xFF << (target_rank * 8)) // and only looking at horizontal attacks
+                            // Or: excluding this pawn and the captured pawn from blockers,
+                                    board.all_pieces() & !mask & !(1 << capture_square),
+                                ) & 0xFF << (capture_rank * 8)) // and only looking at horizontal attacks
                             // Is there a horizontal attack from a rook or queen
                                    & (enemy_pieces & (board.rooks | board.queens)) == 0)
                         {
                             // If target is to the right of the current square
                             if target_file != 0 && i % 8 == target_file - 1 {
                                 let end_mask = if white { mask << 9 } else { mask >> 7 };
-                                if end_mask & block_mask != 0 || capture_mask & (1 << target) != 0 {
+                                if end_mask & block_mask != 0
+                                    || capture_mask & (1 << capture_square) != 0
+                                {
                                     moves.push(Move::right_en_passant(i));
                                 }
                             } else if target_file != 7 && i % 8 == target_file + 1 {
                                 let end_mask = if white { mask << 7 } else { mask >> 9 };
-                                if end_mask & block_mask != 0 || capture_mask & (1 << target) != 0 {
+                                if end_mask & block_mask != 0
+                                    || capture_mask & (1 << capture_square) != 0
+                                {
                                     moves.push(Move::left_en_passant(i));
                                 }
                             }
