@@ -162,7 +162,7 @@ impl Evaluation {
                 square as usize
             } else {
                 // Flip rank but keep file
-                ((8 - (square / 8)) + square % 8) as usize
+                ((7 - (square / 8)) * 8 + square % 8) as usize
             };
             if mask & board.pawns != 0 {
                 score += Self::lerp_value(

@@ -103,13 +103,13 @@ impl Search {
         }
         let color = if self.board.white_to_move() { 1 } else { -1 };
         let mut best_move = &legal_moves[0];
-        let max_depth = 10;
+        let max_depth = 3;
         let timer = Instant::now();
         let time_ok = || {
             !stop_signal.load(Relaxed)
                 && timer.elapsed().as_millis() < (time_left_ms / 20 + increment / 2)
         };
-        'iterative_deepening: for depth in 1..(max_depth + 1) {
+        'iterative_deepening: for depth in 0..(max_depth + 1) {
             let mut depth_best_score = -i64::MAX;
             let mut depth_best_move = best_move;
             for mov in &legal_moves {

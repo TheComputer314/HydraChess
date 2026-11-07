@@ -28,10 +28,10 @@ impl fmt::Display for Move {
         write!(f, "{}{}", starting_square, ending_square)?;
         let white = self.ending_index() / 8 == 7;
         match self.flags() {
-            0b0100 => write!(f, "{}", if white { "Q" } else { "q" })?,
-            0b0101 => write!(f, "{}", if white { "R" } else { "r" })?,
-            0b0110 => write!(f, "{}", if white { "B" } else { "b" })?,
-            0b0111 => write!(f, "{}", if white { "N" } else { "n" })?,
+            0b0100 => write!(f, "q")?,
+            0b0101 => write!(f, "r")?,
+            0b0110 => write!(f, "b")?,
+            0b0111 => write!(f, "n")?,
             _ => {}
         }
 
