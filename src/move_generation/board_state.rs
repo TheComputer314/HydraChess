@@ -394,13 +394,21 @@ impl Board {
                     _ => panic!("Invalid promotion character"),
                 }
             } else {
-                if start_file != end_file && let Some(target) = self.en_passant_target() {
+                if start_file != end_file
+                    && let Some(target) = self.en_passant_target()
+                {
                     let target_rank = target / 8;
                     if start_rank == target_rank {
                         let target_file = target % 8;
-                        if start_file != 0 && start_file - 1 == target_file && end_file == target_file {
+                        if start_file != 0
+                            && start_file - 1 == target_file
+                            && end_file == target_file
+                        {
                             mov = Move::left_en_passant(start_square);
-                        } else if start_file != 7 && start_file + 1 == target_file && end_file == target_file {
+                        } else if start_file != 7
+                            && start_file + 1 == target_file
+                            && end_file == target_file
+                        {
                             mov = Move::right_en_passant(start_square);
                         } else {
                             mov = Move::regular(start_square, end_square);
@@ -496,7 +504,8 @@ impl Board {
         } else if start_mask & self.kings != 0 {
             King
         } else {
-            panic!("Move {:?} at position {:?} has no piece at the start square",
+            panic!(
+                "Move {:?} at position {:?} has no piece at the start square",
                 mov.to_string(),
                 self.to_string()
             );

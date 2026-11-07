@@ -1,11 +1,11 @@
 mod move_generation;
 mod search;
 
+use crate::search::Search;
 use std::io::{self, BufRead, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, channel};
-use crate::search::Search;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
@@ -17,9 +17,7 @@ async fn main() {
     let stop_signal = Arc::new(AtomicBool::new(false));
 
     let stop_signal_clone = stop_signal.clone();
-    let search_thread_handle = tokio::spawn(async move {
-        search_loop(cmd_rx, stop_signal_clone)
-    });
+    let search_thread_handle = tokio::spawn(async move { search_loop(cmd_rx, stop_signal_clone) });
 
     // UCI main loop: read commands from stdin line by line.
     while let Some(Ok(line)) = stdin_lines.next() {
@@ -34,7 +32,7 @@ async fn main() {
         match command {
             "uci" => {
                 let mut out = stdout.lock();
-                writeln!(out, "id name HydraChessV1").unwrap();
+                writeln!(out, "id name HydraChessV2").unwrap();
                 writeln!(out, "id author Hydra").unwrap();
                 writeln!(out, "uciok").unwrap();
                 out.flush().unwrap();
@@ -52,13 +50,54 @@ async fn main() {
                 cmd_tx.send(EngineCommand::Position { position }).unwrap();
             }
             "go" => {
-                // TODO: Parse go args
+                let (white_time_left_ms, white_increment, black_time_left_ms, black_increment) =
+                    if parts.len() < 2 || parts[1] == "infinite" {
+                        (u128::MAX, 0, u128::MAX, 0)
+                    } else {
+                        let mut temp_white_time_left_ms = u128::MAX;
+                        let mut temp_white_increment = 0;
+                        let mut temp_black_time_left_ms = u128::MAX;
+                        let mut temp_black_increment = 0;
+
+                        let mut i = 1;
+                        loop {
+                            if i >= parts.len() {
+                                break;
+                            }
+                            if parts[i] == "wtime" {
+                                temp_white_time_left_ms = parts[i + 1].parse().unwrap();
+                                i += 2;
+                                continue;
+                            } else if parts[i] == "winc" {
+                                temp_white_increment = parts[i + 1].parse().unwrap();
+                                i += 2;
+                                continue;
+                            } else if parts[i] == "btime" {
+                                temp_black_time_left_ms = parts[i + 1].parse().unwrap();
+                                i += 2;
+                                continue;
+                            } else if parts[i] == "binc" {
+                                temp_black_increment = parts[i + 1].parse().unwrap();
+                                i += 2;
+                                continue;
+                            } else {
+                                i += 1;
+                            }
+                        }
+                        (
+                            temp_white_time_left_ms,
+                            temp_white_increment,
+                            temp_black_time_left_ms,
+                            temp_black_increment,
+                        )
+                    };
+
                 cmd_tx
                     .send(EngineCommand::Go {
-                        white_time_left_ms: 0,
-                        white_increment: 0,
-                        black_time_left_ms: 0,
-                        black_increment: 0,
+                        white_time_left_ms,
+                        white_increment,
+                        black_time_left_ms,
+                        black_increment,
                     })
                     .unwrap();
             }
@@ -87,10 +126,10 @@ enum EngineCommand {
         position: String,
     },
     Go {
-        white_time_left_ms: u64,
-        white_increment: u64,
-        black_time_left_ms: u64,
-        black_increment: u64,
+        white_time_left_ms: u128,
+        white_increment: u128,
+        black_time_left_ms: u128,
+        black_increment: u128,
     },
     Debug,
     Quit,
@@ -113,7 +152,13 @@ fn search_loop(cmd_rx: Receiver<EngineCommand>, stop_signal: Arc<AtomicBool>) {
                 black_increment,
             } => {
                 stop_signal.store(false, Ordering::Relaxed);
-                search.go(&stop_signal);
+                search.go(
+                    &stop_signal,
+                    white_time_left_ms,
+                    white_increment,
+                    black_time_left_ms,
+                    black_increment,
+                );
             }
             EngineCommand::Debug => {
                 search.debug();

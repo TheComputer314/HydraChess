@@ -32,7 +32,7 @@ impl fmt::Display for Move {
             0b0101 => write!(f, "{}", if white { "R" } else { "r" })?,
             0b0110 => write!(f, "{}", if white { "B" } else { "b" })?,
             0b0111 => write!(f, "{}", if white { "N" } else { "n" })?,
-            _ => {},
+            _ => {}
         }
 
         Ok(())
@@ -44,11 +44,7 @@ impl Move {
         Self::new(starting_index, ending_index, 0)
     }
 
-    pub fn pawn_promotion(
-        starting_index: u8,
-        ending_index: u8,
-        promotion: PieceType,
-    ) -> Self {
+    pub fn pawn_promotion(starting_index: u8, ending_index: u8, promotion: PieceType) -> Self {
         let flags = match promotion {
             PieceType::Queen => 0b0100,
             PieceType::Rook => 0b0101,
@@ -213,11 +209,11 @@ pub mod squares {
     pub const F8: u8 = 61;
     pub const G8: u8 = 62;
     pub const H8: u8 = 63;
-    
+
     pub const fn rank(index: u8) -> u8 {
         index / 8
     }
-    
+
     pub const fn file(index: u8) -> u8 {
         index % 8
     }
@@ -225,23 +221,23 @@ pub mod squares {
     pub const fn mask(index: u8) -> u64 {
         1 << index
     }
-    
+
     pub const fn north(index: u8) -> u8 {
         index + 8
     }
-    
+
     pub const fn northeast(index: u8) -> u8 {
         index + 9
     }
-    
+
     pub const fn east(index: u8) -> u8 {
         index + 1
     }
-    
+
     pub const fn southeast(index: u8) -> u8 {
         index - 7
     }
-    
+
     pub const fn south(index: u8) -> u8 {
         index - 8
     }
@@ -249,11 +245,11 @@ pub mod squares {
     pub const fn southwest(index: u8) -> u8 {
         index - 9
     }
-    
+
     pub const fn west(index: u8) -> u8 {
         index - 1
     }
-    
+
     pub const fn northwest(index: u8) -> u8 {
         index + 7
     }

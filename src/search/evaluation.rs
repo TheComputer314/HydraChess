@@ -166,38 +166,50 @@ impl Evaluation {
             };
             if mask & board.pawns != 0 {
                 score += Self::lerp_value(
-                    Self::OPENING_PIECE_VALUES[0] + Self::OPENING_PAWN_PIECE_SQUARE[piece_square_lookup],
-                    Self::ENDGAME_PIECE_VALUES[0] + Self::ENDGAME_PAWN_PIECE_SQUARE[piece_square_lookup],
+                    Self::OPENING_PIECE_VALUES[0]
+                        + Self::OPENING_PAWN_PIECE_SQUARE[piece_square_lookup],
+                    Self::ENDGAME_PIECE_VALUES[0]
+                        + Self::ENDGAME_PAWN_PIECE_SQUARE[piece_square_lookup],
                     pieces_left,
                 ) * color_mult;
             } else if mask & board.knights != 0 {
                 score += Self::lerp_value(
-                    Self::OPENING_PIECE_VALUES[1] + Self::OPENING_KNIGHT_PIECE_SQUARE[piece_square_lookup],
-                    Self::ENDGAME_PIECE_VALUES[1] + Self::ENDGAME_KNIGHT_PIECE_SQUARE[piece_square_lookup],
+                    Self::OPENING_PIECE_VALUES[1]
+                        + Self::OPENING_KNIGHT_PIECE_SQUARE[piece_square_lookup],
+                    Self::ENDGAME_PIECE_VALUES[1]
+                        + Self::ENDGAME_KNIGHT_PIECE_SQUARE[piece_square_lookup],
                     pieces_left,
                 ) * color_mult;
             } else if mask & board.bishops != 0 {
                 score += Self::lerp_value(
-                    Self::OPENING_PIECE_VALUES[2] + Self::OPENING_BISHOP_PIECE_SQUARE[piece_square_lookup],
-                    Self::ENDGAME_PIECE_VALUES[2] + Self::ENDGAME_BISHOP_PIECE_SQUARE[piece_square_lookup],
+                    Self::OPENING_PIECE_VALUES[2]
+                        + Self::OPENING_BISHOP_PIECE_SQUARE[piece_square_lookup],
+                    Self::ENDGAME_PIECE_VALUES[2]
+                        + Self::ENDGAME_BISHOP_PIECE_SQUARE[piece_square_lookup],
                     pieces_left,
                 ) * color_mult;
             } else if mask & board.rooks != 0 {
                 score += Self::lerp_value(
-                    Self::OPENING_PIECE_VALUES[3] + Self::OPENING_ROOK_PIECE_SQUARE[piece_square_lookup],
-                    Self::ENDGAME_PIECE_VALUES[3] + Self::ENDGAME_ROOK_PIECE_SQUARE[piece_square_lookup],
+                    Self::OPENING_PIECE_VALUES[3]
+                        + Self::OPENING_ROOK_PIECE_SQUARE[piece_square_lookup],
+                    Self::ENDGAME_PIECE_VALUES[3]
+                        + Self::ENDGAME_ROOK_PIECE_SQUARE[piece_square_lookup],
                     pieces_left,
                 ) * color_mult;
             } else if mask & board.queens != 0 {
                 score += Self::lerp_value(
-                    Self::OPENING_PIECE_VALUES[4] + Self::OPENING_QUEEN_PIECE_SQUARE[piece_square_lookup],
-                    Self::ENDGAME_PIECE_VALUES[4] + Self::ENDGAME_QUEEN_PIECE_SQUARE[piece_square_lookup],
+                    Self::OPENING_PIECE_VALUES[4]
+                        + Self::OPENING_QUEEN_PIECE_SQUARE[piece_square_lookup],
+                    Self::ENDGAME_PIECE_VALUES[4]
+                        + Self::ENDGAME_QUEEN_PIECE_SQUARE[piece_square_lookup],
                     pieces_left,
                 ) * color_mult;
             } else if mask & board.kings != 0 {
                 score += Self::lerp_value(
-                    Self::OPENING_PIECE_VALUES[5] + Self::OPENING_KING_PIECE_SQUARE[piece_square_lookup],
-                    Self::ENDGAME_PIECE_VALUES[5] + Self::ENDGAME_KING_PIECE_SQUARE[piece_square_lookup],
+                    Self::OPENING_PIECE_VALUES[5]
+                        + Self::OPENING_KING_PIECE_SQUARE[piece_square_lookup],
+                    Self::ENDGAME_PIECE_VALUES[5]
+                        + Self::ENDGAME_KING_PIECE_SQUARE[piece_square_lookup],
                     pieces_left,
                 ) * color_mult;
             }

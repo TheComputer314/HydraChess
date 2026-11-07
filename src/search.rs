@@ -3,11 +3,11 @@ mod evaluation;
 use super::move_generation::{Board, MoveGenerator};
 use crate::move_generation::mov::Move;
 use crate::search::evaluation::Evaluation;
-use rand::random_range;
+use std::io::stdout;
 use std::io::{Stdout, Write};
-use std::io::{StdoutLock, stdout};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering::Relaxed;
 use std::time::Instant;
 
 const TRANSPOSITION_TABLE_SIZE: usize = 1 << 20;
@@ -67,10 +67,22 @@ impl Search {
         println!("Moves played: {}", self.moves_played);
     }
 
-    pub fn go(&mut self, stop_signal: &Arc<AtomicBool>) {
+    pub fn go(
+        &mut self,
+        stop_signal: &Arc<AtomicBool>,
+        white_time_left_ms: u128,
+        white_increment: u128,
+        black_time_left_ms: u128,
+        black_increment: u128,
+    ) {
         let out = stdout();
 
-        let best_move = self.search(stop_signal, &out);
+        let (time_left_ms, increment) = if self.board.white_to_move() {
+            (white_time_left_ms, white_increment)
+        } else {
+            (black_time_left_ms, black_increment)
+        };
+        let best_move = self.search(stop_signal, &out, time_left_ms, increment);
         self.board.make_move(&best_move);
         let mut out = stdout().lock();
         writeln!(out, "bestmove {}", best_move).unwrap();
@@ -78,38 +90,59 @@ impl Search {
         self.moves_played += 1;
     }
 
-    fn search(&mut self, stop_signal: &Arc<AtomicBool>, out: &Stdout) -> Move {
+    fn search(
+        &mut self,
+        stop_signal: &Arc<AtomicBool>,
+        out: &Stdout,
+        time_left_ms: u128,
+        increment: u128,
+    ) -> Move {
         let legal_moves = self.move_generator.legal_moves(&self.board);
         if legal_moves.is_empty() {
             panic!("Attempted to search and eval when we're checkmated")
         }
         let color = if self.board.white_to_move() { 1 } else { -1 };
-        let mut best_score = -i64::MAX;
-        let mut best_move = &legal_moves[random_range(0..legal_moves.len())];
+        let mut best_move = &legal_moves[0];
         let max_depth = 10;
         let timer = Instant::now();
+        let time_ok = || {
+            !stop_signal.load(Relaxed)
+                && timer.elapsed().as_millis() < (time_left_ms / 20 + increment / 2)
+        };
         'iterative_deepening: for depth in 1..(max_depth + 1) {
+            let mut depth_best_score = -i64::MAX;
+            let mut depth_best_move = best_move;
             for mov in &legal_moves {
                 let metadata = self.board.make_move(mov);
-                let eval = self.negamax(depth, -i64::MAX, i64::MAX, color);
-                self.board.unmake_move(mov, metadata);
-                if eval > best_score {
-                    best_score = eval;
-                    best_move = mov;
-                    let mut lock = out.lock();
-                    writeln!(lock, "info depth {} score cp {}", depth, best_score).unwrap();
-                    lock.flush().unwrap();
+                {
+                    let eval = self.negamax(depth, -i64::MAX, i64::MAX, color, &time_ok);
+                    self.board.unmake_move(mov, metadata);
+                    if eval > depth_best_score {
+                        depth_best_score = eval;
+                        depth_best_move = mov;
+                        let mut lock = out.lock();
+                        writeln!(lock, "info depth {} score cp {}", depth, depth_best_score)
+                            .unwrap();
+                        lock.flush().unwrap();
+                    }
                 }
-                if timer.elapsed().as_secs() > 5 { // TODO: Do actual time management
+                if !time_ok() {
                     break 'iterative_deepening;
                 }
             }
+            best_move = depth_best_move;
         }
 
         *best_move
     }
 
-    fn negamax(&mut self, depth: u16, alpha: i64, beta: i64, color: i64) -> i64 {
+    fn negamax<F>(&mut self, depth: u16, alpha: i64, beta: i64, color: i64, time_ok: &F) -> i64
+    where
+        F: Fn() -> bool,
+    {
+        if self.board.get_halfmove_clock() > 100 {
+            return 0;
+        }
         if depth == 0 {
             return Evaluation::evaluate(&self.board) * color;
         }
@@ -122,8 +155,11 @@ impl Search {
 
         let mut alpha = alpha;
         for mov in moves {
+            if !time_ok() {
+                return 0;
+            }
             let metadata = self.board.make_move(&mov);
-            let value = -self.negamax(depth - 1, -beta, -alpha, -color);
+            let value = -self.negamax(depth - 1, -beta, -alpha, -color, time_ok);
             self.board.unmake_move(&mov, metadata);
             alpha = alpha.max(value);
             if alpha >= beta {
