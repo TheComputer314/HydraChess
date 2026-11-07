@@ -1,7 +1,7 @@
 mod move_generation;
 mod search;
 
-use crate::search::Search;
+use crate::search::SearchThread;
 use std::io::{self, BufRead, Write};
 use std::process;
 use std::sync::Arc;
@@ -147,7 +147,7 @@ enum EngineCommand {
 }
 
 fn search_loop(cmd_rx: Receiver<EngineCommand>, stop_signal: Arc<AtomicBool>) {
-    let mut search = Search::new();
+    let mut search = SearchThread::new();
     while let Ok(cmd) = cmd_rx.recv() {
         match cmd {
             EngineCommand::NewGame => {

@@ -1,6 +1,6 @@
 use super::mov::PieceType::*;
 use super::mov::squares::*;
-use super::mov::{Move, PieceType, squares};
+use super::mov::{Move, PieceType};
 use std::fmt;
 use std::fmt::Debug;
 

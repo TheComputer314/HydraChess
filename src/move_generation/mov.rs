@@ -26,7 +26,6 @@ impl fmt::Display for Move {
         let starting_square = to_name(self.starting_index());
         let ending_square = to_name(self.ending_index());
         write!(f, "{}{}", starting_square, ending_square)?;
-        let white = self.ending_index() / 8 == 7;
         match self.flags() {
             0b0100 => write!(f, "q")?,
             0b0101 => write!(f, "r")?,

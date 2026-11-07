@@ -1,8 +1,10 @@
 mod evaluation;
+mod transposition_table;
 
 use super::move_generation::{Board, MoveGenerator};
 use crate::move_generation::mov::Move;
 use crate::search::evaluation::Evaluation;
+use crate::search::transposition_table::TranspositionTable;
 use std::io::stdout;
 use std::io::{Stdout, Write};
 use std::sync::Arc;
@@ -10,43 +12,33 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 use std::time::Instant;
 
-const TRANSPOSITION_TABLE_SIZE: usize = 1 << 20;
-
-pub struct Search {
-    board: Board,
-    move_generator: MoveGenerator,
-    transposition_table: Vec<u8>,
-    moves_played: usize,
+pub struct SearchThread {
+    search: Search,
 }
 
-impl Search {
+impl SearchThread {
     pub fn new() -> Self {
         Self {
-            board: Board::starting(),
-            move_generator: MoveGenerator::new(),
-            transposition_table: vec![0; TRANSPOSITION_TABLE_SIZE],
-            moves_played: 0,
+            search: Search::new(),
         }
     }
 
     pub fn new_game(&mut self) {
-        self.board = Board::starting();
-        self.transposition_table = vec![0; TRANSPOSITION_TABLE_SIZE];
-        self.moves_played = 0;
+        self.search = Search::new();
     }
 
     pub fn position(&mut self, string: &str) {
         let parts: Vec<&str> = string.split_whitespace().collect();
 
         if parts[0] == "startpos" {
-            self.board = Board::starting();
-            self.moves_played = 0;
+            self.search.board = Board::starting();
+            self.search.moves_played = 0;
             if parts.len() > 1 && parts[1] == "moves" {
                 self.position_moves(&parts[2..]);
             }
         } else if parts[0] == "fen" {
-            self.board = Board::from_fen(&parts[1..7].join(" "));
-            self.moves_played = 0;
+            self.search.board = Board::from_fen(&parts[1..7].join(" "));
+            self.search.moves_played = 0;
             if parts.len() > 7 && parts[7] == "moves" {
                 self.position_moves(&parts[8..]);
             }
@@ -55,14 +47,14 @@ impl Search {
 
     fn position_moves(&mut self, moves: &[&str]) {
         for mov in moves {
-            self.board.move_from_uci_lan(mov);
-            self.moves_played += 1;
+            self.search.board.move_from_uci_lan(mov);
+            self.search.moves_played += 1;
         }
     }
 
     pub fn debug(&self) {
-        println!("Board: {}", self.board);
-        println!("Moves played: {}", self.moves_played);
+        println!("Board: {}", self.search.board);
+        println!("Moves played: {}", self.search.moves_played);
     }
 
     pub fn go(
@@ -75,17 +67,37 @@ impl Search {
     ) {
         let out = stdout();
 
-        let (time_left_ms, increment) = if self.board.white_to_move() {
+        let (time_left_ms, increment) = if self.search.board.white_to_move() {
             (white_time_left_ms, white_increment)
         } else {
             (black_time_left_ms, black_increment)
         };
-        let best_move = self.search(stop_signal, &out, time_left_ms, increment);
-        self.board.make_move(&best_move);
+        let best_move = self
+            .search
+            .search(stop_signal, &out, time_left_ms, increment);
+        self.search.board.make_move(&best_move);
         let mut out = stdout().lock();
         writeln!(out, "bestmove {}", best_move).unwrap();
         out.flush().unwrap();
-        self.moves_played += 1;
+        self.search.moves_played += 1;
+    }
+}
+
+struct Search {
+    board: Board,
+    move_generator: MoveGenerator,
+    transposition_table: TranspositionTable,
+    moves_played: usize,
+}
+
+impl Search {
+    pub fn new() -> Self {
+        Self {
+            board: Board::starting(),
+            move_generator: MoveGenerator::new(),
+            transposition_table: TranspositionTable::new(20),
+            moves_played: 0,
+        }
     }
 
     fn search(
@@ -147,7 +159,7 @@ impl Search {
 
         let moves = self.move_generator.legal_moves(&self.board);
         if moves.is_empty() {
-            return i64::MAX;
+            return -i64::MAX;
         }
         let mut sorted_moves: Vec<(&Move, i64)> = Vec::with_capacity(moves.len());
         for i in 0..moves.len() {
