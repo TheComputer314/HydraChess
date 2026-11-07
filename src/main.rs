@@ -10,13 +10,15 @@ use std::sync::mpsc::{Receiver, channel};
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
-    std::panic::set_hook(Box::new(|panic_info| {
-        eprintln!("Critical engine panic: {panic_info}");
+    if cfg!(not(debug_assertions)) {
+        std::panic::set_hook(Box::new(|panic_info| {
+            eprintln!("Critical engine panic: {panic_info}");
 
-        // Immediate termination of the entire engine process
-        // Prevents Tokio from catching the panic, we want a fast exit
-        process::exit(1);
-    }));
+            // Immediate termination of the entire engine process
+            // Prevents Tokio from catching the panic, we want a fast exit
+            process::exit(1);
+        }));
+    }
 
     let stdin = io::stdin();
     let stdout = io::stdout();
