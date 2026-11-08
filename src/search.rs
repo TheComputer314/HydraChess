@@ -133,13 +133,14 @@ impl Search {
                         depth_best_move = mov;
 
                         if depth_best_score.abs() > Self::IMMEDIATE_MATE_SCORE - 10000 {
-                            let mate_in_ply = Self::IMMEDIATE_MATE_SCORE - depth_best_score;
+                            let mate_in_ply =
+                                Self::IMMEDIATE_MATE_SCORE - depth_best_score.abs();
                             let mut lock = out.lock();
                             writeln!(
                                 lock,
                                 "info depth {} score mate {}",
                                 depth,
-                                (mate_in_ply + 1) / 2
+                                ((mate_in_ply + 1) / 2) * depth_best_score.signum()
                             )
                             .unwrap();
                             lock.flush().unwrap();
@@ -182,7 +183,9 @@ impl Search {
         let mut alpha = alpha;
         let mut beta = beta;
 
-        // If we found a faster mate elsewhere, skip this move
+        // Alpha can't possibly be worse than getting checkmated right now, if it is it means we already found a
+        // faster mate elsewhere
+        // Same for beta
         alpha = alpha.max(-Self::IMMEDIATE_MATE_SCORE + search_ply as i64);
         beta = beta.min(Self::IMMEDIATE_MATE_SCORE - search_ply as i64);
         if alpha >= beta {
@@ -195,9 +198,6 @@ impl Search {
                 return search_ply as i64 - i64::MAX / 2;
             }
             return 0;
-        }
-        if depth == 0 {
-            return self.quiescence(alpha, beta, color, time_ok);
         }
 
         let tt_result = self.transposition_table.get(self.board.zobrist_hash);
@@ -215,6 +215,10 @@ impl Search {
                     return tt_result.score;
                 }
             }
+        }
+
+        if depth == 0 {
+            return self.quiescence(alpha, beta, color, time_ok);
         }
 
         let sorted_moves = self.sort_moves(&moves, tt_move, color);
