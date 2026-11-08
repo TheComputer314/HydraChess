@@ -146,7 +146,7 @@ impl Search {
                             lock.flush().unwrap();
                         } else {
                             let mut lock = out.lock();
-                            writeln!(lock, "info depth {} score cp {}", depth, depth_best_score)
+                            writeln!(lock, "info depth {} score cp {}", depth, depth_best_score * color)
                                 .unwrap();
                             lock.flush().unwrap();
                         }
