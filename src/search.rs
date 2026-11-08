@@ -197,7 +197,7 @@ impl Search {
             return 0;
         }
         if depth == 0 {
-            return Evaluation::evaluate(&self.board) * color;
+            return self.quiescence(alpha, beta, color, time_ok);
         }
 
         let tt_result = self.transposition_table.get(self.board.zobrist_hash);
@@ -252,6 +252,52 @@ impl Search {
         alpha
     }
 
+    fn quiescence<F>(&mut self, alpha: i64, beta: i64, color: i64, time_ok: &F) -> i64 where F: Fn() -> bool {
+        if !time_ok() {
+            return 0;
+        }
+        let mut alpha = alpha;
+        let mut beta = beta;
+
+        let static_eval = Evaluation::evaluate(&self.board) * color;
+        if static_eval >= beta {
+            return beta;
+        }
+        if static_eval > alpha {
+            alpha = static_eval;
+        }
+
+        let check = self.move_generator.king_in_check(&self.board);
+
+        let moves;
+        if check {
+            moves = self.move_generator.legal_moves(&self.board);
+            if moves.is_empty() {
+                return Self::IMMEDIATE_MATE_SCORE;
+            }
+        } else {
+            moves = self.move_generator.legal_captures(&self.board);
+        }
+        let moves = self.sort_moves(&moves, None, color);
+
+        for mov in moves {
+            if !time_ok() {
+                return 0;
+            }
+            let metadata = self.board.make_move(&mov);
+            let eval = -self.quiescence(-beta, -alpha, -color, time_ok);
+            self.board.unmake_move(&mov, metadata);
+            if eval >= beta {
+                return beta;
+            }
+            if eval > alpha {
+                alpha = eval;
+            }
+        }
+
+        alpha
+    }
+
     fn sort_moves(&mut self, moves: &Vec<Move>, tt_move: Option<Move>, color: i64) -> Vec<Move> {
         let mut sorted_moves: Vec<(&Move, i64)> = Vec::with_capacity(moves.len());
         for mov in moves {
@@ -261,11 +307,15 @@ impl Search {
             {
                 value = 1 << 10;
             } else {
-                value = 0; // TODO: Implement MVV-LVA
+                let metadata = self.board.make_move(mov);
+                value = Evaluation::evaluate(&self.board) * color; // TODO: Implement MVV-LVA
+                self.board.unmake_move(mov, metadata);
             }
             sorted_moves.push((mov, value));
         }
         sorted_moves.sort_by_key(|mov| Reverse(mov.1));
         sorted_moves.iter().map(|mov| *mov.0).collect()
     }
+
+
 }

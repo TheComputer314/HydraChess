@@ -327,6 +327,24 @@ impl Board {
             }
     }
 
+    pub fn get_piece_at_square(&self, square: u8) -> Option<PieceType> {
+        let mask = 1 << square;
+        if self.pawns & mask != 0 {
+            return Some(Pawn);
+        } else if self.knights & mask != 0 {
+            return Some(Knight);
+        } else if self.bishops & mask != 0 {
+            return Some(Bishop);
+        } else if self.rooks & mask != 0 {
+            return Some(Rook);
+        } else if self.queens & mask != 0 {
+            return Some(Queen);
+        } else if self.kings & mask != 0 {
+            return Some(King);
+        }
+        None
+    }
+
     pub fn all_pieces(&self) -> u64 {
         self.white | self.black
     }

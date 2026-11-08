@@ -1,4 +1,5 @@
-use crate::move_generation::mov::PieceType::{Bishop, King, Knight, Queen, Rook};
+use crate::move_generation::mov::PieceType;
+use crate::move_generation::mov::PieceType::{Bishop, King, Knight, Pawn, Queen, Rook};
 pub(crate) use board_state::Board;
 use mov::Move;
 use move_lookup::MoveLookup;
@@ -19,6 +20,21 @@ impl MoveGenerator {
     }
 
     pub fn legal_moves(&self, board: &Board) -> Vec<Move> {
+        self.legal_moves_internal(board)
+            .into_iter()
+            .map(|(m, _)| m)
+            .collect()
+    }
+
+    // TODO: There has to be a better way to do this
+    pub fn legal_captures(&self, board: &Board) -> Vec<Move> {
+        self.legal_moves_internal(board)
+            .into_iter()
+            .filter_map(|(m, p)| if p.is_some() { Some(m) } else { None })
+            .collect()
+    }
+
+    fn legal_moves_internal(&self, board: &Board) -> Vec<(Move, Option<PieceType>)> {
         let white = board.white_to_move();
         let friendly_pieces = if white { board.white } else { board.black };
         let enemy_pieces = if white { board.black } else { board.white };
@@ -38,7 +54,7 @@ impl MoveGenerator {
             self.lookup.possible_king_moves(king_index) & !friendly_pieces;
         let legal_king_moves = pseudo_legal_king_moves & !king_danger_mask;
         for i in Self::get_indices_of_bits(legal_king_moves) {
-            moves.push(Move::regular(king_index, i));
+            moves.push((Move::regular(king_index, i), board.get_piece_at_square(i)));
         }
 
         // If in double check, only legal moves are non-castling king moves
@@ -82,7 +98,7 @@ impl MoveGenerator {
                 // And no pieces attacking the squares between the king and the rook
                 && king_danger_mask & kingside_castle_blocker_mask == 0
             {
-                moves.push(Move::kingside_castle(white));
+                moves.push((Move::kingside_castle(white), None));
             }
             let queenside_castle_blocker_mask = if white { 0xe } else { 0xe << 56 };
             let queenside_castle_danger_mask = if white { 0xc } else { 0xc << 56 };
@@ -91,7 +107,7 @@ impl MoveGenerator {
                 // And no pieces attacking the squares between the king and the rook
                 && king_danger_mask & queenside_castle_danger_mask == 0
             {
-                moves.push(Move::queenside_castle(white));
+                moves.push((Move::queenside_castle(white), None));
             }
         }
 
@@ -152,12 +168,12 @@ impl MoveGenerator {
                         if push_mask & cardinal_pin_mask & block_mask != 0 {
                             let final_rank = if white { 7 } else { 0 };
                             if push_square / 8 == final_rank {
-                                moves.push(Move::pawn_promotion(i, push_square, Knight));
-                                moves.push(Move::pawn_promotion(i, push_square, Bishop));
-                                moves.push(Move::pawn_promotion(i, push_square, Rook));
-                                moves.push(Move::pawn_promotion(i, push_square, Queen));
+                                moves.push((Move::pawn_promotion(i, push_square, Knight), None));
+                                moves.push((Move::pawn_promotion(i, push_square, Bishop), None));
+                                moves.push((Move::pawn_promotion(i, push_square, Rook), None));
+                                moves.push((Move::pawn_promotion(i, push_square, Queen), None));
                             } else {
-                                moves.push(Move::regular(i, push_square));
+                                moves.push((Move::regular(i, push_square), None));
                             }
                         }
                         let starting_rank = if white { 1 } else { 6 };
@@ -171,7 +187,7 @@ impl MoveGenerator {
                                 & !board.all_pieces()
                                 != 0
                             {
-                                moves.push(Move::double_pawn_push(i));
+                                moves.push((Move::double_pawn_push(i), None));
                             }
                         }
                     }
@@ -187,12 +203,24 @@ impl MoveGenerator {
                         if left_capture_mask & diagonal_pin_mask & capture_mask & enemy_pieces != 0
                         {
                             if push_square / 8 == final_rank {
-                                moves.push(Move::pawn_promotion(i, left_capture_square, Knight));
-                                moves.push(Move::pawn_promotion(i, left_capture_square, Bishop));
-                                moves.push(Move::pawn_promotion(i, left_capture_square, Rook));
-                                moves.push(Move::pawn_promotion(i, left_capture_square, Queen));
+                                moves.push((
+                                    Move::pawn_promotion(i, left_capture_square, Knight),
+                                    board.get_piece_at_square(left_capture_square),
+                                ));
+                                moves.push((
+                                    Move::pawn_promotion(i, left_capture_square, Bishop),
+                                    board.get_piece_at_square(left_capture_square),
+                                ));
+                                moves.push((
+                                    Move::pawn_promotion(i, left_capture_square, Rook),
+                                    board.get_piece_at_square(left_capture_square),
+                                ));
+                                moves.push((
+                                    Move::pawn_promotion(i, left_capture_square, Queen),
+                                    board.get_piece_at_square(left_capture_square),
+                                ));
                             } else {
-                                moves.push(Move::regular(i, left_capture_square));
+                                moves.push((Move::regular(i, left_capture_square), board.get_piece_at_square(left_capture_square)));
                             }
                         }
                     }
@@ -202,12 +230,24 @@ impl MoveGenerator {
                         if right_capture_mask & diagonal_pin_mask & capture_mask & enemy_pieces != 0
                         {
                             if push_square / 8 == final_rank {
-                                moves.push(Move::pawn_promotion(i, right_capture_square, Knight));
-                                moves.push(Move::pawn_promotion(i, right_capture_square, Bishop));
-                                moves.push(Move::pawn_promotion(i, right_capture_square, Rook));
-                                moves.push(Move::pawn_promotion(i, right_capture_square, Queen));
+                                moves.push((
+                                    Move::pawn_promotion(i, right_capture_square, Knight),
+                                    board.get_piece_at_square(right_capture_square),
+                                ));
+                                moves.push((
+                                    Move::pawn_promotion(i, right_capture_square, Bishop),
+                                    board.get_piece_at_square(right_capture_square),
+                                ));
+                                moves.push((
+                                    Move::pawn_promotion(i, right_capture_square, Rook),
+                                    board.get_piece_at_square(right_capture_square),
+                                ));
+                                moves.push((
+                                    Move::pawn_promotion(i, right_capture_square, Queen),
+                                    board.get_piece_at_square(right_capture_square),
+                                ));
                             } else {
-                                moves.push(Move::regular(i, right_capture_square));
+                                moves.push((Move::regular(i, right_capture_square), board.get_piece_at_square(right_capture_square)));
                             }
                         }
                     }
@@ -233,14 +273,14 @@ impl MoveGenerator {
                                 if end_mask & block_mask & diagonal_pin_mask != 0
                                     && capture_mask & (1 << capture_square) != 0
                                 {
-                                    moves.push(Move::right_en_passant(i));
+                                    moves.push((Move::right_en_passant(i), Some(Pawn)));
                                 }
                             } else if target_file != 7 && i % 8 == target_file + 1 {
                                 let end_mask = if white { mask << 7 } else { mask >> 9 };
                                 if end_mask & block_mask & diagonal_pin_mask != 0
                                     && capture_mask & (1 << capture_square) != 0
                                 {
-                                    moves.push(Move::left_en_passant(i));
+                                    moves.push((Move::left_en_passant(i), Some(Pawn)));
                                 }
                             }
                         }
@@ -263,7 +303,7 @@ impl MoveGenerator {
                 let knight_moves =
                     self.lookup.possible_knight_moves(i) & legal_end_squares & !friendly_pieces;
                 for j in Self::get_indices_of_bits(knight_moves) {
-                    moves.push(Move::regular(i, j));
+                    moves.push((Move::regular(i, j), board.get_piece_at_square(j) ));
                 }
             } else if board.bishops & mask != 0 {
                 // If pinned by a horizontal ray, the bishop cannot move
@@ -286,7 +326,7 @@ impl MoveGenerator {
                     & legal_end_squares
                     & !friendly_pieces;
                 for j in Self::get_indices_of_bits(bishop_moves) {
-                    moves.push(Move::regular(i, j));
+                    moves.push(( Move::regular(i, j ), board.get_piece_at_square(j) ));
                 }
             } else if board.rooks & mask != 0 {
                 // If pinned by a diagonal ray, the rook cannot move
@@ -309,7 +349,7 @@ impl MoveGenerator {
                     & legal_end_squares
                     & !friendly_pieces;
                 for j in Self::get_indices_of_bits(rook_moves) {
-                    moves.push(Move::regular(i, j));
+                    moves.push((Move::regular(i, j), board.get_piece_at_square(j)));
                 }
             } else if board.queens & mask != 0 {
                 // If pinned by a ray, the queen can only move along that ray
@@ -335,7 +375,7 @@ impl MoveGenerator {
                     & legal_end_squares
                     & !friendly_pieces;
                 for j in Self::get_indices_of_bits(queen_moves) {
-                    moves.push(Move::regular(i, j));
+                    moves.push((Move::regular(i, j), board.get_piece_at_square(j)));
                 }
             }
         }
