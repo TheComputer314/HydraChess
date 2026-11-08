@@ -621,7 +621,10 @@ mod tests {
 
     #[test]
     fn perft_en_passant_discovered_check() {
-        test_perft("5Q2/p1p1Rppp/2k5/8/3Pp3/6PP/PP4B1/RNB3K1 b - d3 0 1",&[13, 512])
+        test_perft(
+            "5Q2/p1p1Rppp/2k5/8/3Pp3/6PP/PP4B1/RNB3K1 b - d3 0 1",
+            &[13, 512],
+        )
     }
 
     const TABLE_SIZE: usize = 1 << 20;

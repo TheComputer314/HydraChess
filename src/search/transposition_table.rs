@@ -33,7 +33,7 @@ pub struct TranspositionTable {
 
 impl TranspositionTable {
     pub fn new(size_mb: usize) -> Self {
-        let size = size_mb * 1024 * 1024 / std::mem::size_of::<Entry>();
+        let size = size_mb * 1024 * 1024 / size_of::<Entry>();
         Self {
             size,
             table: vec![

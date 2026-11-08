@@ -135,8 +135,13 @@ impl Search {
                         if depth_best_score.abs() > Self::IMMEDIATE_MATE_SCORE - 10000 {
                             let mate_in_ply = Self::IMMEDIATE_MATE_SCORE - depth_best_score;
                             let mut lock = out.lock();
-                            writeln!(lock, "info depth {} score mate {}", depth, (mate_in_ply + 1) / 2)
-                                .unwrap();
+                            writeln!(
+                                lock,
+                                "info depth {} score mate {}",
+                                depth,
+                                (mate_in_ply + 1) / 2
+                            )
+                            .unwrap();
                             lock.flush().unwrap();
                         } else {
                             let mut lock = out.lock();
