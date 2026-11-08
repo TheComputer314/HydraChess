@@ -110,7 +110,7 @@ impl Search {
     ) -> Move {
         let legal_moves = self.move_generator.legal_moves(&self.board);
         if legal_moves.is_empty() {
-            panic!("Attempted to search and eval when we're checkmated")
+            panic!("Attempted to search and eval board {} when we're checkmated", self.board);
         }
         let color = if self.board.white_to_move() { 1 } else { -1 };
         let mut best_move = &legal_moves[0];
@@ -176,7 +176,7 @@ impl Search {
     where
         F: Fn() -> bool,
     {
-        if self.board.get_halfmove_clock() > 100 {
+        if self.board.get_halfmove_clock() > 100 || self.board.times_played() >= 3 {
             return 0;
         }
         let alpha_original = alpha;

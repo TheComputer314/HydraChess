@@ -33,6 +33,7 @@ pub struct Board {
     flags: u16,
     pub zobrist_hash: u64,
     zobrist_numbers: ZobristNumbers,
+    repetition_table: Vec<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -312,6 +313,7 @@ impl Board {
             flags,
             zobrist_hash,
             zobrist_numbers,
+            repetition_table: Vec::new(),
         }
     }
 
@@ -386,6 +388,11 @@ impl Board {
         } else {
             None
         }
+    }
+
+    /// Count how many times this position has been seen in the game state.
+    pub fn times_played(&self) -> usize {
+        self.repetition_table.iter().filter(|&&hash| hash == self.zobrist_hash).count()
     }
 
     /// Parse a UCI Long Algebraic Notation move string, and apply that move to the board.
@@ -760,6 +767,7 @@ impl Board {
             "A black and white piece on the same square"
         );
 
+        self.repetition_table.push(self.zobrist_hash);
         (last_halfmove_clock, last_flags, last_zobrist_hash, capture)
     }
 
@@ -767,6 +775,7 @@ impl Board {
     ///
     /// Takes the last flag and the captured piece type as input.
     pub fn unmake_move(&mut self, mov: &Move, metadata: (u8, u16, u64, Option<PieceType>)) {
+        self.repetition_table.pop();
         let (last_halfmove_clock, last_flags, last_zobrist_hash, capture) = metadata;
         self.halfmove_clock = last_halfmove_clock;
         self.zobrist_hash = last_zobrist_hash;
@@ -919,6 +928,7 @@ impl Board {
         // Flag rank
         self.flags |= if white { 1 << 9 } else { 0 };
 
+        self.repetition_table.push(self.zobrist_hash);
         last_flag
     }
 
@@ -926,6 +936,8 @@ impl Board {
     ///
     /// Takes the last flag value before the move.
     fn unmake_double_pawn_push(&mut self, mov: &Move) {
+        self.repetition_table.pop();
+
         let start_mask = mov.starting_mask();
         let end_mask = mov.ending_mask();
 
@@ -997,6 +1009,8 @@ impl Board {
         // Clear en passant flags
         self.flags &= !(0b11111 << 5);
 
+        self.repetition_table.push(self.zobrist_hash);
+
         flags
     }
 
@@ -1004,6 +1018,8 @@ impl Board {
     ///
     /// Takes the last flag value before the move.
     fn unmake_en_passant(&mut self, mov: &Move) {
+        self.repetition_table.pop();
+
         let start_mask = mov.starting_mask();
         let end_mask = mov.ending_mask();
 
@@ -1107,10 +1123,14 @@ impl Board {
             self.zobrist_hash ^= self.zobrist_numbers.black_queenside_castling_rights;
         }
 
+        self.repetition_table.push(self.zobrist_hash);
+
         flags
     }
 
     fn unmake_castle(&mut self, mov: &Move) {
+        self.repetition_table.pop();
+
         let white = self.white & mov.ending_mask() != 0;
         let kingside = mov.ending_index() % 8 == 6;
 
