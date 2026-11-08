@@ -230,15 +230,15 @@ impl MoveGenerator {
                             // If target is to the right of the current square
                             if target_file != 0 && i % 8 == target_file - 1 {
                                 let end_mask = if white { mask << 9 } else { mask >> 7 };
-                                if end_mask & block_mask != 0
-                                    || capture_mask & (1 << capture_square) != 0
+                                if end_mask & block_mask & diagonal_pin_mask != 0
+                                    && capture_mask & (1 << capture_square) != 0
                                 {
                                     moves.push(Move::right_en_passant(i));
                                 }
                             } else if target_file != 7 && i % 8 == target_file + 1 {
                                 let end_mask = if white { mask << 7 } else { mask >> 9 };
-                                if end_mask & block_mask != 0
-                                    || capture_mask & (1 << capture_square) != 0
+                                if end_mask & block_mask & diagonal_pin_mask != 0
+                                    && capture_mask & (1 << capture_square) != 0
                                 {
                                     moves.push(Move::left_en_passant(i));
                                 }
@@ -617,6 +617,11 @@ mod tests {
     #[test]
     fn perft_position3_a5a6_h5h7_a6a7_h4h5_g2g4() {
         test_perft("8/K1p4r/3p4/1P5k/1R3pP1/8/4P3/8 b - g3 0 3", &[6])
+    }
+
+    #[test]
+    fn perft_en_passant_discovered_check() {
+        test_perft("5Q2/p1p1Rppp/2k5/8/3Pp3/6PP/PP4B1/RNB3K1 b - d3 0 1",&[13, 512])
     }
 
     const TABLE_SIZE: usize = 1 << 20;
