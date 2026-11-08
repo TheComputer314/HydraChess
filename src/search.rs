@@ -126,15 +126,24 @@ impl Search {
             for mov in &legal_moves {
                 let metadata = self.board.make_move(mov);
                 {
-                    let eval = -self.negamax(depth, -i64::MAX, i64::MAX, -color, &time_ok);
+                    let eval = -self.negamax(depth, 1, -i64::MAX, i64::MAX, -color, &time_ok);
                     self.board.unmake_move(mov, metadata);
                     if eval > depth_best_score {
                         depth_best_score = eval;
                         depth_best_move = mov;
-                        let mut lock = out.lock();
-                        writeln!(lock, "info depth {} score cp {}", depth, depth_best_score)
-                            .unwrap();
-                        lock.flush().unwrap();
+
+                        if depth_best_score.abs() > Self::IMMEDIATE_MATE_SCORE - 10000 {
+                            let mate_in_ply = Self::IMMEDIATE_MATE_SCORE - depth_best_score;
+                            let mut lock = out.lock();
+                            writeln!(lock, "info depth {} score mate {}", depth, (mate_in_ply + 1) / 2)
+                                .unwrap();
+                            lock.flush().unwrap();
+                        } else {
+                            let mut lock = out.lock();
+                            writeln!(lock, "info depth {} score cp {}", depth, depth_best_score)
+                                .unwrap();
+                            lock.flush().unwrap();
+                        }
                     }
                 }
                 if !time_ok() {
@@ -147,20 +156,45 @@ impl Search {
         *best_move
     }
 
-    fn negamax<F>(&mut self, depth: u16, alpha: i64, beta: i64, color: i64, time_ok: &F) -> i64
+    const IMMEDIATE_MATE_SCORE: i64 = i64::MAX / 2;
+
+    fn negamax<F>(
+        &mut self,
+        depth: u16,
+        search_ply: u16,
+        alpha: i64,
+        beta: i64,
+        color: i64,
+        time_ok: &F,
+    ) -> i64
     where
         F: Fn() -> bool,
     {
         if self.board.get_halfmove_clock() > 100 {
             return 0;
         }
+        let alpha_original = alpha;
+        let mut alpha = alpha;
+        let mut beta = beta;
+
+        // If we found a faster mate elsewhere, skip this move
+        alpha = alpha.max(-Self::IMMEDIATE_MATE_SCORE + search_ply as i64);
+        beta = beta.min(Self::IMMEDIATE_MATE_SCORE - search_ply as i64);
+        if alpha >= beta {
+            return alpha;
+        }
+
+        let moves = self.move_generator.legal_moves(&self.board);
+        if moves.is_empty() {
+            if self.move_generator.king_in_check(&self.board) {
+                return search_ply as i64 - i64::MAX / 2;
+            }
+            return 0;
+        }
         if depth == 0 {
             return Evaluation::evaluate(&self.board) * color;
         }
 
-        let alpha_original = alpha;
-        let mut alpha = alpha;
-        let mut beta = beta;
         let tt_result = self.transposition_table.get(self.board.zobrist_hash);
         let mut tt_move = None;
         if let Some(tt_result) = tt_result {
@@ -178,13 +212,6 @@ impl Search {
             }
         }
 
-        let moves = self.move_generator.legal_moves(&self.board);
-        if moves.is_empty() {
-            if self.move_generator.king_in_check(&self.board) {
-                return -i64::MAX / 2;
-            }
-            return 0;
-        }
         let sorted_moves = self.sort_moves(&moves, tt_move, color);
 
         let mut best_value = -i64::MAX;
@@ -194,7 +221,7 @@ impl Search {
                 return 0;
             }
             let metadata = self.board.make_move(&mov);
-            let value = -self.negamax(depth - 1, -beta, -alpha, -color, time_ok);
+            let value = -self.negamax(depth - 1, search_ply + 1, -beta, -alpha, -color, time_ok);
             self.board.unmake_move(&mov, metadata);
             if value > best_value {
                 best_value = value;

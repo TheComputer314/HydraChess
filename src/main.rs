@@ -43,7 +43,7 @@ async fn main() {
         match command {
             "uci" => {
                 let mut out = stdout.lock();
-                writeln!(out, "id name HydraChessV3").unwrap();
+                writeln!(out, "id name HydraChessV4").unwrap();
                 writeln!(out, "id author Hydra").unwrap();
                 writeln!(out, "uciok").unwrap();
                 out.flush().unwrap();
