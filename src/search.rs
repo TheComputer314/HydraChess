@@ -11,7 +11,7 @@ use std::io::{Stdout, Write};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
-use std::time::Instant;
+use minstant::Instant;
 
 pub struct SearchThread {
     search: Search,
@@ -124,9 +124,10 @@ impl Search {
         self.nodes_searched = 0;
         let timer = Instant::now();
         let time_ok = || {
+            let elapsed = timer.elapsed().as_millis();
             !stop_signal.load(Relaxed)
-                && timer.elapsed().as_millis() < (time_left_ms / 20 + increment / 2)
-                && timer.elapsed().as_millis() < 10000 // Max 10 seconds
+                && elapsed < (time_left_ms / 20 + increment / 2)
+                && elapsed < 10000 // Max 10 seconds
         };
         'iterative_deepening: for depth in 1..(max_depth + 1) {
             for mov in &legal_moves {
