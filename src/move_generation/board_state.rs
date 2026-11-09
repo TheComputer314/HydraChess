@@ -493,7 +493,7 @@ impl Board {
                     last_halfmove_clock,
                     self.make_en_passant(&mov),
                     last_zobrist_hash,
-                    None,
+                    Some(piece_type::PAWN),
                 );
             }
             0b0010 => {

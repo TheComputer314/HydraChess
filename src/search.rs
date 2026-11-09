@@ -5,13 +5,14 @@ use super::move_generation::{Board, MoveGenerator};
 use crate::move_generation::mov::Move;
 use crate::search::evaluation::Evaluation;
 use crate::search::transposition_table::{EntryResult, TranspositionTable};
+use minstant::Instant;
 use std::cmp::Reverse;
 use std::io::stdout;
 use std::io::{Stdout, Write};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
-use minstant::Instant;
+use crate::move_generation::mov::piece_type::PAWN;
 
 pub struct SearchThread {
     search: Search,
@@ -126,39 +127,38 @@ impl Search {
         }
         let legal_moves = self.sort_moves(&legal_moves, tt_move, color);
 
-        let mut best_score = -i64::MAX;
         let mut best_move = &legal_moves[0];
-        let max_depth = 16;
+        let max_depth = 5;
         self.nodes_searched = 0;
         let timer = Instant::now();
         let time_ok = || {
-            let elapsed = timer.elapsed().as_millis();
             !stop_signal.load(Relaxed)
-                && elapsed < (time_left_ms / 20 + increment / 2)
-                && elapsed < 10000 // Max 10 seconds
+                && timer.elapsed().as_millis() < (time_left_ms / 20 + increment / 2)
         };
         'iterative_deepening: for depth in 1..(max_depth + 1) {
+            let mut depth_best_score = -i64::MAX;
+            let mut depth_best_move = best_move;
             for mov in &legal_moves {
                 let metadata = self.board.make_move(mov);
 
-                let eval = -self.negamax(depth, 1, -i64::MAX, i64::MAX, -color, &time_ok);
+                let eval = -self.negamax(depth, 0, -i64::MAX, i64::MAX, -color, &time_ok);
                 self.board.unmake_move(mov, metadata);
-                if eval > best_score {
-                    best_score = eval;
-                    best_move = mov;
+                if eval > depth_best_score {
+                    depth_best_score = eval;
+                    depth_best_move = mov;
                 }
 
-                if best_score.abs() > Self::IMMEDIATE_MATE_SCORE - 10000 {
-                    let mate_in_ply = Self::IMMEDIATE_MATE_SCORE - best_score.abs();
+                if depth_best_score.abs() > Self::IMMEDIATE_MATE_SCORE - 10000 {
+                    let mate_in_ply = Self::IMMEDIATE_MATE_SCORE - depth_best_score.abs();
                     let mut lock = out.lock();
                     writeln!(
                         lock,
                         "info depth {} score mate {} nodes {}",
                         depth,
-                        ((mate_in_ply + 1) / 2) * best_score.signum(),
+                        ((mate_in_ply + 1) / 2) * depth_best_score.signum(),
                         self.nodes_searched
                     )
-                    .unwrap();
+                        .unwrap();
                     lock.flush().unwrap();
                 } else {
                     let mut lock = out.lock();
@@ -166,10 +166,10 @@ impl Search {
                         lock,
                         "info depth {} score cp {} nodes {}",
                         depth,
-                        best_score * color,
+                        depth_best_score * color,
                         self.nodes_searched
                     )
-                    .unwrap();
+                        .unwrap();
                     lock.flush().unwrap();
                 }
 
@@ -177,6 +177,7 @@ impl Search {
                     break 'iterative_deepening;
                 }
             }
+            best_move = depth_best_move;
         }
 
         *best_move
@@ -196,6 +197,7 @@ impl Search {
     where
         F: Fn() -> bool,
     {
+        self.nodes_searched += 1;
         if self.board.get_halfmove_clock() > 100 || self.board.times_played() >= 3 {
             return 0;
         }
@@ -215,7 +217,6 @@ impl Search {
         let moves = self.move_generator.legal_moves(&self.board);
         if moves.is_empty() {
             if self.move_generator.king_in_check(&self.board) {
-                self.nodes_searched += 1;
                 return search_ply - Self::IMMEDIATE_MATE_SCORE;
             }
             return 0;
@@ -247,7 +248,7 @@ impl Search {
         let mut best_move = sorted_moves[0];
         for mov in sorted_moves {
             if !time_ok() {
-                return 0;
+                return alpha;
             }
             let metadata = self.board.make_move(&mov);
             let value = -self.negamax(depth - 1, search_ply + 1, -beta, -alpha, -color, time_ok);
@@ -262,7 +263,6 @@ impl Search {
                     break;
                 }
             }
-
         }
 
         self.transposition_table.insert(
@@ -272,7 +272,14 @@ impl Search {
         alpha
     }
 
-    fn quiescence<F>(&mut self, alpha: i64, beta: i64, search_ply: i64, color: i64, time_ok: &F) -> i64
+    fn quiescence<F>(
+        &mut self,
+        alpha: i64,
+        beta: i64,
+        search_ply: i64,
+        color: i64,
+        time_ok: &F,
+    ) -> i64
     where
         F: Fn() -> bool,
     {
@@ -308,13 +315,12 @@ impl Search {
 
         for mov in moves {
             if !time_ok() {
-                return 0;
+                return alpha;
             }
             let metadata = self.board.make_move(&mov);
             let eval = -self.quiescence(-beta, -alpha, search_ply + 1, -color, time_ok);
             self.board.unmake_move(&mov, metadata);
             if eval >= beta {
-                self.nodes_searched += 1;
                 return beta;
             }
             if eval > alpha {
@@ -332,11 +338,28 @@ impl Search {
             if let Some(tt_move) = tt_move
                 && &tt_move == mov
             {
-                value = 1 << 10;
+                value = 1 << 12;
             } else {
-                let metadata = self.board.make_move(mov);
-                value = Evaluation::evaluate(&self.board) * color; // TODO: Implement MVV-LVA
-                self.board.unmake_move(mov, metadata);
+                let capture_type = if mov.flags() == 0b0001 {
+                    Some(PAWN)
+                } else {
+                    self.board.get_piece_at_square(mov.ending_index())
+                };
+
+                value = if let Some(capture_type) = capture_type {
+                    let attacker_type = self.board.get_piece_at_square(mov.starting_index()).unwrap();
+                    Evaluation::mvv_lva(
+                        attacker_type as usize,
+                        capture_type as usize,
+                    ) + (1 << 10)
+                } else {
+                    let metadata = self.board.make_move(mov);
+                    let eval = Evaluation::evaluate(&self.board) * color;
+                    self.board.unmake_move(mov, metadata);
+                    eval
+                };
+
+
             }
             sorted_moves.push((mov, value));
         }
