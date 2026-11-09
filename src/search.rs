@@ -3,6 +3,7 @@ mod transposition_table;
 
 use super::move_generation::{Board, MoveGenerator};
 use crate::move_generation::mov::Move;
+use crate::move_generation::mov::piece_type::PAWN;
 use crate::search::evaluation::Evaluation;
 use crate::search::transposition_table::{EntryResult, TranspositionTable};
 use minstant::Instant;
@@ -12,7 +13,6 @@ use std::io::{Stdout, Write};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
-use crate::move_generation::mov::piece_type::PAWN;
 
 pub struct SearchThread {
     search: Search,
@@ -158,7 +158,7 @@ impl Search {
                         ((mate_in_ply + 1) / 2) * depth_best_score.signum(),
                         self.nodes_searched
                     )
-                        .unwrap();
+                    .unwrap();
                     lock.flush().unwrap();
                 } else {
                     let mut lock = out.lock();
@@ -169,7 +169,7 @@ impl Search {
                         depth_best_score * color,
                         self.nodes_searched
                     )
-                        .unwrap();
+                    .unwrap();
                     lock.flush().unwrap();
                 }
 
@@ -214,13 +214,15 @@ impl Search {
             return alpha;
         }
 
-        let moves = self.move_generator.legal_moves(&self.board);
+        let (moves, check) = self.move_generator.legal_moves_with_metadata(&self.board);
         if moves.is_empty() {
-            if self.move_generator.king_in_check(&self.board) {
-                return search_ply - Self::IMMEDIATE_MATE_SCORE;
-            }
-            return 0;
+            return if check {
+                search_ply - Self::IMMEDIATE_MATE_SCORE // Checkmate
+            } else {
+                0 // Draw by no legal moves
+            };
         }
+        let moves = moves.into_iter().map(|mov| mov.0).collect();
 
         let tt_result = self.transposition_table.get(self.board.zobrist_hash);
         let mut tt_move = None;
@@ -297,20 +299,17 @@ impl Search {
             alpha = static_eval;
         }
 
-        let check = self.move_generator.king_in_check(&self.board);
-
-        let moves;
-        if check {
-            moves = self.move_generator.legal_moves(&self.board);
-            if moves.is_empty() {
-                return Self::IMMEDIATE_MATE_SCORE - search_ply;
-            }
+        let (mut moves, check) = self.move_generator.legal_moves_with_metadata(&self.board);
+        if moves.is_empty() {
+            return if check {
+                Self::IMMEDIATE_MATE_SCORE - search_ply // Checkmate
+            } else {
+                0 // Draw by no legal moves
+            };
         } else {
-            moves = self.move_generator.legal_captures(&self.board);
-            if moves.is_empty() {
-                return static_eval;
-            }
+            moves.retain(|mov| mov.1.is_some());
         }
+        let moves = moves.into_iter().map(|mov| mov.0).collect();
         let moves = self.sort_moves(&moves, None, color);
 
         for mov in moves {
@@ -347,19 +346,17 @@ impl Search {
                 };
 
                 value = if let Some(capture_type) = capture_type {
-                    let attacker_type = self.board.get_piece_at_square(mov.starting_index()).unwrap();
-                    Evaluation::mvv_lva(
-                        attacker_type as usize,
-                        capture_type as usize,
-                    ) + (1 << 10)
+                    let attacker_type = self
+                        .board
+                        .get_piece_at_square(mov.starting_index())
+                        .unwrap();
+                    Evaluation::mvv_lva(attacker_type as usize, capture_type as usize) + (1 << 10)
                 } else {
                     let metadata = self.board.make_move(mov);
                     let eval = Evaluation::evaluate(&self.board) * color;
                     self.board.unmake_move(mov, metadata);
                     eval
                 };
-
-
             }
             sorted_moves.push((mov, value));
         }

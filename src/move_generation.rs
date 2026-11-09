@@ -19,21 +19,13 @@ impl MoveGenerator {
     }
 
     pub fn legal_moves(&self, board: &Board) -> Vec<Move> {
-        self.legal_moves_internal(board)
+        self.legal_moves_with_metadata(board).0
             .into_iter()
             .map(|(m, _)| m)
             .collect()
     }
 
-    // TODO: There has to be a better way to do this
-    pub fn legal_captures(&self, board: &Board) -> Vec<Move> {
-        self.legal_moves_internal(board)
-            .into_iter()
-            .filter_map(|(m, p)| if p.is_some() { Some(m) } else { None })
-            .collect()
-    }
-
-    fn legal_moves_internal(&self, board: &Board) -> Vec<(Move, Option<u8>)> {
+    pub fn legal_moves_with_metadata(&self, board: &Board) -> (Vec<(Move, Option<u8>)>, bool) {
         let white = board.white_to_move();
         let friendly_pieces = if white { board.white } else { board.black };
         let enemy_pieces = if white { board.black } else { board.white };
@@ -58,7 +50,7 @@ impl MoveGenerator {
 
         // If in double check, only legal moves are non-castling king moves
         if checkers > 1 {
-            return moves;
+            return (moves, true);
         }
 
         // Mask of what enemy pieces can attack the king
@@ -420,17 +412,7 @@ impl MoveGenerator {
             }
         }
 
-        moves
-    }
-
-    pub fn king_in_check(&self, board: &Board) -> bool {
-        let white = board.white_to_move();
-        let king_mask = board.get_bitboard(white, piece_type::KING);
-        let enemy_pieces = if white { board.black } else { board.white };
-        let blockers = board.all_pieces() & !king_mask;
-        let (_, checkers, _) =
-            self.king_danger_mask(board, white, enemy_pieces, king_mask, blockers);
-        checkers != 0
+        (moves, checkers > 0)
     }
 
     fn king_danger_mask(
@@ -440,7 +422,7 @@ impl MoveGenerator {
         enemy_pieces: u64,
         king_mask: u64,
         blockers: u64,
-    ) -> (u64, i32, u8) {
+    ) -> (u64, u32, u8) {
         // For every enemy piece, create a mask of the squares it attacks
         // If the king is currently sitting in an attacked square, it is in check
         let mut king_danger_mask: u64 = 0;
