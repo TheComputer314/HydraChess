@@ -118,6 +118,9 @@ impl Search {
                 self.board
             );
         }
+        if legal_moves.len() == 1 {
+            return legal_moves[0];
+        }
 
         let color = if self.board.white_to_move() { 1 } else { -1 };
         let transposition_table_result = self.transposition_table.get(self.board.zobrist_hash);
@@ -128,12 +131,14 @@ impl Search {
         let legal_moves = self.sort_moves(&legal_moves, tt_move, color);
 
         let mut best_move = &legal_moves[0];
-        let max_depth = 5;
+        let max_depth = 16;
         self.nodes_searched = 0;
         let timer = Instant::now();
         let time_ok = || {
+            let elapsed = timer.elapsed().as_millis();
             !stop_signal.load(Relaxed)
-                && timer.elapsed().as_millis() < (time_left_ms / 20 + increment / 2)
+                && elapsed < (time_left_ms / 20 + increment / 2)
+            && elapsed < 10000
         };
         'iterative_deepening: for depth in 1..(max_depth + 1) {
             let mut depth_best_score = -i64::MAX;
@@ -141,7 +146,7 @@ impl Search {
             for mov in &legal_moves {
                 let metadata = self.board.make_move(mov);
 
-                let eval = -self.negamax(depth, 0, -i64::MAX, i64::MAX, -color, &time_ok);
+                let eval = -self.negamax(depth, 1, -i64::MAX, i64::MAX, -color, &time_ok);
                 self.board.unmake_move(mov, metadata);
                 if eval > depth_best_score {
                     depth_best_score = eval;
@@ -201,15 +206,13 @@ impl Search {
         if self.board.get_halfmove_clock() > 100 || self.board.times_played() >= 3 {
             return 0;
         }
-        let mut alpha = alpha;
-        let mut beta = beta;
         let mut evaluation_type = 1;
 
         // Alpha can't possibly be worse than getting checkmated right now, if it is it means we already found a
         // faster mate elsewhere
         // Same for beta
-        alpha = alpha.max(-Self::IMMEDIATE_MATE_SCORE + search_ply);
-        beta = beta.min(Self::IMMEDIATE_MATE_SCORE - search_ply);
+        let mut alpha = alpha.max(-Self::IMMEDIATE_MATE_SCORE + search_ply);
+        let mut beta = beta.min(Self::IMMEDIATE_MATE_SCORE - search_ply);
         if alpha >= beta {
             return alpha;
         }
