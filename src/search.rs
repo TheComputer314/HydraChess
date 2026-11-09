@@ -118,35 +118,35 @@ impl Search {
             );
         }
         let color = if self.board.white_to_move() { 1 } else { -1 };
+        let mut best_score = -i64::MAX;
         let mut best_move = &legal_moves[0];
-        let max_depth = 5;
+        let max_depth = 16;
         self.nodes_searched = 0;
         let timer = Instant::now();
         let time_ok = || {
             !stop_signal.load(Relaxed)
                 && timer.elapsed().as_millis() < (time_left_ms / 20 + increment / 2)
+                && timer.elapsed().as_millis() < 10000 // Max 10 seconds
         };
         'iterative_deepening: for depth in 1..(max_depth + 1) {
-            let mut depth_best_score = -i64::MAX;
-            let mut depth_best_move = best_move;
             for mov in &legal_moves {
                 let metadata = self.board.make_move(mov);
 
                 let eval = -self.negamax(depth, 1, -i64::MAX, i64::MAX, -color, &time_ok);
                 self.board.unmake_move(mov, metadata);
-                if eval > depth_best_score {
-                    depth_best_score = eval;
-                    depth_best_move = mov;
+                if eval > best_score {
+                    best_score = eval;
+                    best_move = mov;
                 }
 
-                if depth_best_score.abs() > Self::IMMEDIATE_MATE_SCORE - 10000 {
-                    let mate_in_ply = Self::IMMEDIATE_MATE_SCORE - depth_best_score.abs();
+                if best_score.abs() > Self::IMMEDIATE_MATE_SCORE - 10000 {
+                    let mate_in_ply = Self::IMMEDIATE_MATE_SCORE - best_score.abs();
                     let mut lock = out.lock();
                     writeln!(
                         lock,
                         "info depth {} score mate {} nodes {}",
                         depth,
-                        ((mate_in_ply + 1) / 2) * depth_best_score.signum(),
+                        ((mate_in_ply + 1) / 2) * best_score.signum(),
                         self.nodes_searched
                     )
                     .unwrap();
@@ -157,7 +157,7 @@ impl Search {
                         lock,
                         "info depth {} score cp {} nodes {}",
                         depth,
-                        depth_best_score * color,
+                        best_score * color,
                         self.nodes_searched
                     )
                     .unwrap();
@@ -168,7 +168,6 @@ impl Search {
                     break 'iterative_deepening;
                 }
             }
-            best_move = depth_best_move;
         }
 
         *best_move

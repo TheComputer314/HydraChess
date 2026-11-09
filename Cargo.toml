@@ -1,6 +1,9 @@
 [build]
 rustflags = ["-C", "target_cpu=native", "link-arg=-fuse-ld=mold", "-Clink-arg=-Wl,--no-rosegment"]
 
+[profile.release]
+#debug = true
+
 [package]
 name = "HydraChess"
 version = "0.1.0"
