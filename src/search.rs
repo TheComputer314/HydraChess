@@ -187,7 +187,7 @@ impl Search {
     fn negamax<F>(
         &mut self,
         depth: u16,
-        search_ply: u16,
+        search_ply: i64,
         alpha: i64,
         beta: i64,
         color: i64,
@@ -206,8 +206,8 @@ impl Search {
         // Alpha can't possibly be worse than getting checkmated right now, if it is it means we already found a
         // faster mate elsewhere
         // Same for beta
-        alpha = alpha.max(-Self::IMMEDIATE_MATE_SCORE + search_ply as i64);
-        beta = beta.min(Self::IMMEDIATE_MATE_SCORE - search_ply as i64);
+        alpha = alpha.max(-Self::IMMEDIATE_MATE_SCORE + search_ply);
+        beta = beta.min(Self::IMMEDIATE_MATE_SCORE - search_ply);
         if alpha >= beta {
             return alpha;
         }
@@ -216,7 +216,7 @@ impl Search {
         if moves.is_empty() {
             if self.move_generator.king_in_check(&self.board) {
                 self.nodes_searched += 1;
-                return search_ply as i64 - i64::MAX / 2;
+                return search_ply - Self::IMMEDIATE_MATE_SCORE;
             }
             return 0;
         }
@@ -239,7 +239,7 @@ impl Search {
         }
 
         if depth == 0 {
-            return self.quiescence(alpha, beta, color, time_ok);
+            return self.quiescence(alpha, beta, search_ply + 1, color, time_ok);
         }
 
         let sorted_moves = self.sort_moves(&moves, tt_move, color);
@@ -272,7 +272,7 @@ impl Search {
         alpha
     }
 
-    fn quiescence<F>(&mut self, alpha: i64, beta: i64, color: i64, time_ok: &F) -> i64
+    fn quiescence<F>(&mut self, alpha: i64, beta: i64, search_ply: i64, color: i64, time_ok: &F) -> i64
     where
         F: Fn() -> bool,
     {
@@ -296,7 +296,7 @@ impl Search {
         if check {
             moves = self.move_generator.legal_moves(&self.board);
             if moves.is_empty() {
-                return Self::IMMEDIATE_MATE_SCORE;
+                return Self::IMMEDIATE_MATE_SCORE - search_ply;
             }
         } else {
             moves = self.move_generator.legal_captures(&self.board);
@@ -311,7 +311,7 @@ impl Search {
                 return 0;
             }
             let metadata = self.board.make_move(&mov);
-            let eval = -self.quiescence(-beta, -alpha, -color, time_ok);
+            let eval = -self.quiescence(-beta, -alpha, search_ply + 1, -color, time_ok);
             self.board.unmake_move(&mov, metadata);
             if eval >= beta {
                 self.nodes_searched += 1;
