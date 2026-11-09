@@ -1,6 +1,6 @@
-use super::mov::PieceType::*;
+use super::mov::Move;
+use super::mov::piece_type;
 use super::mov::squares::*;
-use super::mov::{Move, PieceType};
 use std::fmt;
 use std::fmt::Debug;
 
@@ -112,29 +112,29 @@ impl fmt::Display for Board {
                         write!(f, "{}", empty)?;
                         empty = 0;
                     }
-                    if self.get_bitboard(true, Pawn) & square_mask != 0 {
+                    if self.get_bitboard(true, piece_type::PAWN) & square_mask != 0 {
                         write!(f, "P")?;
-                    } else if self.get_bitboard(true, Knight) & square_mask != 0 {
+                    } else if self.get_bitboard(true, piece_type::KNIGHT) & square_mask != 0 {
                         write!(f, "N")?;
-                    } else if self.get_bitboard(true, Bishop) & square_mask != 0 {
+                    } else if self.get_bitboard(true, piece_type::BISHOP) & square_mask != 0 {
                         write!(f, "B")?;
-                    } else if self.get_bitboard(true, Rook) & square_mask != 0 {
+                    } else if self.get_bitboard(true, piece_type::ROOK) & square_mask != 0 {
                         write!(f, "R")?;
-                    } else if self.get_bitboard(true, Queen) & square_mask != 0 {
+                    } else if self.get_bitboard(true, piece_type::QUEEN) & square_mask != 0 {
                         write!(f, "Q")?;
-                    } else if self.get_bitboard(true, King) & square_mask != 0 {
+                    } else if self.get_bitboard(true, piece_type::KING) & square_mask != 0 {
                         write!(f, "K")?;
-                    } else if self.get_bitboard(false, Pawn) & square_mask != 0 {
+                    } else if self.get_bitboard(false, piece_type::PAWN) & square_mask != 0 {
                         write!(f, "p")?;
-                    } else if self.get_bitboard(false, Knight) & square_mask != 0 {
+                    } else if self.get_bitboard(false, piece_type::KNIGHT) & square_mask != 0 {
                         write!(f, "n")?;
-                    } else if self.get_bitboard(false, Bishop) & square_mask != 0 {
+                    } else if self.get_bitboard(false, piece_type::BISHOP) & square_mask != 0 {
                         write!(f, "b")?;
-                    } else if self.get_bitboard(false, Rook) & square_mask != 0 {
+                    } else if self.get_bitboard(false, piece_type::ROOK) & square_mask != 0 {
                         write!(f, "r")?;
-                    } else if self.get_bitboard(false, Queen) & square_mask != 0 {
+                    } else if self.get_bitboard(false, piece_type::QUEEN) & square_mask != 0 {
                         write!(f, "q")?;
-                    } else if self.get_bitboard(false, King) & square_mask != 0 {
+                    } else if self.get_bitboard(false, piece_type::KING) & square_mask != 0 {
                         write!(f, "k")?;
                     }
                 }
@@ -317,32 +317,33 @@ impl Board {
         }
     }
 
-    pub fn get_bitboard(&self, white: bool, piece_type: PieceType) -> u64 {
+    pub fn get_bitboard(&self, white: bool, piece_type: u8) -> u64 {
         (if white { self.white } else { self.black })
             & match piece_type {
-                Pawn => self.pawns,
-                Knight => self.knights,
-                Bishop => self.bishops,
-                Rook => self.rooks,
-                Queen => self.queens,
-                King => self.kings,
+                piece_type::PAWN => self.pawns,
+                piece_type::KNIGHT => self.knights,
+                piece_type::BISHOP => self.bishops,
+                piece_type::ROOK => self.rooks,
+                piece_type::QUEEN => self.queens,
+                piece_type::KING => self.kings,
+                _ => panic!("Invalid piece type"),
             }
     }
 
-    pub fn get_piece_at_square(&self, square: u8) -> Option<PieceType> {
+    pub fn get_piece_at_square(&self, square: u8) -> Option<u8> {
         let mask = 1 << square;
         if self.pawns & mask != 0 {
-            return Some(Pawn);
+            return Some(piece_type::PAWN);
         } else if self.knights & mask != 0 {
-            return Some(Knight);
+            return Some(piece_type::KNIGHT);
         } else if self.bishops & mask != 0 {
-            return Some(Bishop);
+            return Some(piece_type::BISHOP);
         } else if self.rooks & mask != 0 {
-            return Some(Rook);
+            return Some(piece_type::ROOK);
         } else if self.queens & mask != 0 {
-            return Some(Queen);
+            return Some(piece_type::QUEEN);
         } else if self.kings & mask != 0 {
-            return Some(King);
+            return Some(piece_type::KING);
         }
         None
     }
@@ -392,7 +393,10 @@ impl Board {
 
     /// Count how many times this position has been seen in the game state.
     pub fn times_played(&self) -> usize {
-        self.repetition_table.iter().filter(|&&hash| hash == self.zobrist_hash).count()
+        self.repetition_table
+            .iter()
+            .filter(|&&hash| hash == self.zobrist_hash)
+            .count()
     }
 
     /// Parse a UCI Long Algebraic Notation move string, and apply that move to the board.
@@ -412,10 +416,10 @@ impl Board {
                 mov = Move::double_pawn_push(start_square);
             } else if let Some(char) = chars.next() {
                 match char {
-                    'n' => mov = Move::pawn_promotion(start_square, end_square, Knight),
-                    'b' => mov = Move::pawn_promotion(start_square, end_square, Bishop),
-                    'r' => mov = Move::pawn_promotion(start_square, end_square, Rook),
-                    'q' => mov = Move::pawn_promotion(start_square, end_square, Queen),
+                    'n' => mov = Move::pawn_promotion(start_square, end_square, piece_type::KNIGHT),
+                    'b' => mov = Move::pawn_promotion(start_square, end_square, piece_type::BISHOP),
+                    'r' => mov = Move::pawn_promotion(start_square, end_square, piece_type::ROOK),
+                    'q' => mov = Move::pawn_promotion(start_square, end_square, piece_type::QUEEN),
                     _ => panic!("Invalid promotion character"),
                 }
             } else {
@@ -479,7 +483,7 @@ impl Board {
     /// - The last flags
     /// - The last Zobrist hash
     /// - The captured piece type, if any
-    pub fn make_move(&mut self, mov: &Move) -> (u8, u16, u64, Option<PieceType>) {
+    pub fn make_move(&mut self, mov: &Move) -> (u8, u16, u64, Option<u8>) {
         let last_halfmove_clock = self.halfmove_clock;
         let last_zobrist_hash = self.zobrist_hash;
         // Handle special moves
@@ -517,17 +521,17 @@ impl Board {
 
         // Get type of the piece being moved
         let moved_piece = if start_mask & self.pawns != 0 {
-            Pawn
+            piece_type::PAWN
         } else if start_mask & self.knights != 0 {
-            Knight
+            piece_type::KNIGHT
         } else if start_mask & self.bishops != 0 {
-            Bishop
+            piece_type::BISHOP
         } else if start_mask & self.rooks != 0 {
-            Rook
+            piece_type::ROOK
         } else if start_mask & self.queens != 0 {
-            Queen
+            piece_type::QUEEN
         } else if start_mask & self.kings != 0 {
-            King
+            piece_type::KING
         } else {
             panic!(
                 "Move {:?} at position {:?} has no piece at the start square",
@@ -539,15 +543,15 @@ impl Board {
         let white = start_mask & self.white != 0;
         // If the move is a capture, get the type of the captured piece
         let capture = if end_mask & self.pawns != 0 {
-            Some(Pawn)
+            Some(piece_type::PAWN)
         } else if end_mask & self.knights != 0 {
-            Some(Knight)
+            Some(piece_type::KNIGHT)
         } else if end_mask & self.bishops != 0 {
-            Some(Bishop)
+            Some(piece_type::BISHOP)
         } else if end_mask & self.rooks != 0 {
-            Some(Rook)
+            Some(piece_type::ROOK)
         } else if end_mask & self.queens != 0 {
-            Some(Queen)
+            Some(piece_type::QUEEN)
         } else if end_mask & self.kings != 0 {
             panic!(
                 "Move {:?} at position {:?} is a king capture??????",
@@ -559,7 +563,7 @@ impl Board {
         };
 
         // If a piece was captured or if the piece to move is a pawn, reset the halfmove clock
-        if capture.is_some() || moved_piece == Pawn {
+        if capture.is_some() || moved_piece == piece_type::PAWN {
             self.halfmove_clock = 0;
         } else {
             // Otherwise, increment it
@@ -568,32 +572,33 @@ impl Board {
 
         // Remove the captured piece from the board
         match &capture {
-            Some(Pawn) => {
+            Some(piece_type::PAWN) => {
                 self.pawns &= !end_mask;
                 self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash
                     [mov.ending_index() as usize][if white { 1 } else { 0 }][0];
             }
-            Some(Knight) => {
+            Some(piece_type::KNIGHT) => {
                 self.knights &= !end_mask;
                 self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash
                     [mov.ending_index() as usize][if white { 1 } else { 0 }][1];
             }
-            Some(Bishop) => {
+            Some(piece_type::BISHOP) => {
                 self.bishops &= !end_mask;
                 self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash
                     [mov.ending_index() as usize][if white { 1 } else { 0 }][2];
             }
-            Some(Rook) => {
+            Some(piece_type::ROOK) => {
                 self.rooks &= !end_mask;
                 self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash
                     [mov.ending_index() as usize][if white { 1 } else { 0 }][3];
             }
-            Some(Queen) => {
+            Some(piece_type::QUEEN) => {
                 self.queens &= !end_mask;
                 self.zobrist_hash ^= self.zobrist_numbers.piece_square_hash
                     [mov.ending_index() as usize][if white { 1 } else { 0 }][4];
             }
-            Some(King) => panic!("King capture??????"),
+            Some(piece_type::KING) => panic!("King capture??????"),
+            Some(_) => panic!("Invalid piece type"),
             None => {}
         }
         if capture.is_some() {
@@ -608,7 +613,7 @@ impl Board {
         let start_piece_type_index;
         let end_piece_type_index;
         match moved_piece {
-            Pawn => {
+            piece_type::PAWN => {
                 self.pawns &= !start_mask;
                 start_piece_type_index = 0;
                 // Promotions
@@ -635,36 +640,37 @@ impl Board {
                     }
                 }
             }
-            Knight => {
+            piece_type::KNIGHT => {
                 self.knights &= !start_mask;
                 self.knights |= end_mask;
                 start_piece_type_index = 1;
                 end_piece_type_index = 1;
             }
-            Bishop => {
+            piece_type::BISHOP => {
                 self.bishops &= !start_mask;
                 self.bishops |= end_mask;
                 start_piece_type_index = 2;
                 end_piece_type_index = 2;
             }
-            Rook => {
+            piece_type::ROOK => {
                 self.rooks &= !start_mask;
                 self.rooks |= end_mask;
                 start_piece_type_index = 3;
                 end_piece_type_index = 3;
             }
-            Queen => {
+            piece_type::QUEEN => {
                 self.queens &= !start_mask;
                 self.queens |= end_mask;
                 start_piece_type_index = 4;
                 end_piece_type_index = 4;
             }
-            King => {
+            piece_type::KING => {
                 self.kings &= !start_mask;
                 self.kings |= end_mask;
                 start_piece_type_index = 5;
                 end_piece_type_index = 5;
             }
+            _ => panic!("Invalid piece type"),
         }
         if white {
             self.white &= !start_mask;
@@ -696,7 +702,7 @@ impl Board {
         if white {
             if self.kingside_castling_available(true) // If white's kingside castling is available,
                 // and either the H file rook moved, or the king moved
-                && ((moved_piece == Rook && mov.starting_index() == H1) || moved_piece == King)
+                && ((moved_piece == piece_type::ROOK && mov.starting_index() == H1) || moved_piece == piece_type::KING)
             {
                 // Then clear the flag for white's kingside castling
                 self.flags &= !1;
@@ -704,7 +710,7 @@ impl Board {
             }
             if self.queenside_castling_available(true) // If white's queenside castling is available,
                 // and either the A file rook or the king moved
-                && ((moved_piece == Rook && mov.starting_index() == A1) || moved_piece == King)
+                && ((moved_piece == piece_type::ROOK && mov.starting_index() == A1) || moved_piece == piece_type::KING)
             {
                 // Then clear the flag for white's queenside castling
                 self.flags &= !(1 << 1);
@@ -729,7 +735,7 @@ impl Board {
         } else {
             if self.kingside_castling_available(false) // If black's kingside castling is available,
                 // and either the H file rook moved, or the king moved
-                && ((moved_piece == Rook && mov.starting_index() == H8) || moved_piece == King)
+                && ((moved_piece == piece_type::ROOK && mov.starting_index() == H8) || moved_piece == piece_type::KING)
             {
                 // Then clear the flag for black's kingside castling
                 self.flags &= !(1 << 2);
@@ -737,7 +743,7 @@ impl Board {
             }
             if self.queenside_castling_available(false) // If black's queenside castling is available,
                 // and either the A file rook moved, or the king moved
-            && ((moved_piece == Rook && mov.starting_index() == A8) || moved_piece == King)
+            && ((moved_piece == piece_type::ROOK && mov.starting_index() == A8) || moved_piece == piece_type::KING)
             {
                 // Then clear the flag for black's queenside castling
                 self.flags &= !(1 << 3);
@@ -774,7 +780,7 @@ impl Board {
     /// Unmakes a move on the board state.
     ///
     /// Takes the last flag and the captured piece type as input.
-    pub fn unmake_move(&mut self, mov: &Move, metadata: (u8, u16, u64, Option<PieceType>)) {
+    pub fn unmake_move(&mut self, mov: &Move, metadata: (u8, u16, u64, Option<u8>)) {
         self.repetition_table.pop();
         let (last_halfmove_clock, last_flags, last_zobrist_hash, capture) = metadata;
         self.halfmove_clock = last_halfmove_clock;
@@ -794,17 +800,17 @@ impl Board {
         // End mask since we're unmaking the move from end to start
         let moved_piece = if mov.flags() != 0 || end_mask & self.pawns != 0 {
             // If flags are set, it's a promotion, so the move must be a pawn
-            Pawn
+            piece_type::PAWN
         } else if end_mask & self.knights != 0 {
-            Knight
+            piece_type::KNIGHT
         } else if end_mask & self.bishops != 0 {
-            Bishop
+            piece_type::BISHOP
         } else if end_mask & self.rooks != 0 {
-            Rook
+            piece_type::ROOK
         } else if end_mask & self.queens != 0 {
-            Queen
+            piece_type::QUEEN
         } else if end_mask & self.kings != 0 {
-            King
+            piece_type::KING
         } else {
             panic!("No piece at the end square");
         };
@@ -812,7 +818,7 @@ impl Board {
         let white = end_mask & self.white != 0;
 
         match moved_piece {
-            Pawn => {
+            piece_type::PAWN => {
                 self.pawns |= start_mask;
                 // Promotions
                 match mov.flags() {
@@ -823,26 +829,27 @@ impl Board {
                     _ => self.pawns &= !end_mask,
                 }
             }
-            Knight => {
+            piece_type::KNIGHT => {
                 self.knights |= start_mask;
                 self.knights &= !end_mask;
             }
-            Bishop => {
+            piece_type::BISHOP => {
                 self.bishops |= start_mask;
                 self.bishops &= !end_mask;
             }
-            Rook => {
+            piece_type::ROOK => {
                 self.rooks |= start_mask;
                 self.rooks &= !end_mask;
             }
-            Queen => {
+            piece_type::QUEEN => {
                 self.queens |= start_mask;
                 self.queens &= !end_mask;
             }
-            King => {
+            piece_type::KING => {
                 self.kings |= start_mask;
                 self.kings &= !end_mask;
             }
+            _ => panic!("Invalid piece type"),
         }
         if white {
             self.white |= start_mask;
@@ -853,12 +860,13 @@ impl Board {
         }
 
         match capture {
-            Some(Pawn) => self.pawns |= end_mask,
-            Some(Knight) => self.knights |= end_mask,
-            Some(Bishop) => self.bishops |= end_mask,
-            Some(Rook) => self.rooks |= end_mask,
-            Some(Queen) => self.queens |= end_mask,
-            Some(King) => panic!("King capture??????"),
+            Some(piece_type::PAWN) => self.pawns |= end_mask,
+            Some(piece_type::KNIGHT) => self.knights |= end_mask,
+            Some(piece_type::BISHOP) => self.bishops |= end_mask,
+            Some(piece_type::ROOK) => self.rooks |= end_mask,
+            Some(piece_type::QUEEN) => self.queens |= end_mask,
+            Some(piece_type::KING) => panic!("King capture??????"),
+            Some(_) => panic!("Invalid piece type"),
             None => {}
         }
         if capture.is_some() {
@@ -1172,9 +1180,10 @@ impl Board {
 
 #[cfg(test)]
 mod tests {
+    use super::super::mov::Move;
     use super::super::mov::squares::{A1, A2, A3, A7, B8, C3, C6, E4, E5};
-    use super::super::mov::{Move, PieceType};
     use super::Board;
+    use crate::move_generation::mov::piece_type;
 
     #[test]
     fn test_load_starting() {
@@ -1183,62 +1192,62 @@ mod tests {
         test_bitboard(0xFFFF000000000000, board.black, "all black");
         test_bitboard(
             0x000000000000FF00,
-            board.get_bitboard(true, PieceType::Pawn),
+            board.get_bitboard(true, piece_type::PAWN),
             "white pawns",
         );
         test_bitboard(
             0x00FF000000000000,
-            board.get_bitboard(false, PieceType::Pawn),
+            board.get_bitboard(false, piece_type::PAWN),
             "black pawns",
         );
         test_bitboard(
             0x0000000000000042,
-            board.get_bitboard(true, PieceType::Knight),
+            board.get_bitboard(true, piece_type::KNIGHT),
             "white knights",
         );
         test_bitboard(
             0x4200000000000000,
-            board.get_bitboard(false, PieceType::Knight),
+            board.get_bitboard(false, piece_type::KNIGHT),
             "black knights",
         );
         test_bitboard(
             0x0000000000000024,
-            board.get_bitboard(true, PieceType::Bishop),
+            board.get_bitboard(true, piece_type::BISHOP),
             "white bishops",
         );
         test_bitboard(
             0x2400000000000000,
-            board.get_bitboard(false, PieceType::Bishop),
+            board.get_bitboard(false, piece_type::BISHOP),
             "black bishops",
         );
         test_bitboard(
             0x0000000000000081,
-            board.get_bitboard(true, PieceType::Rook),
+            board.get_bitboard(true, piece_type::ROOK),
             "white rooks",
         );
         test_bitboard(
             0x8100000000000000,
-            board.get_bitboard(false, PieceType::Rook),
+            board.get_bitboard(false, piece_type::ROOK),
             "black rooks",
         );
         test_bitboard(
             0x0000000000000008,
-            board.get_bitboard(true, PieceType::Queen),
+            board.get_bitboard(true, piece_type::QUEEN),
             "white queen",
         );
         test_bitboard(
             0x0800000000000000,
-            board.get_bitboard(false, PieceType::Queen),
+            board.get_bitboard(false, piece_type::QUEEN),
             "black queen",
         );
         test_bitboard(
             0x0000000000000010,
-            board.get_bitboard(true, PieceType::King),
+            board.get_bitboard(true, piece_type::KING),
             "white king",
         );
         test_bitboard(
             0x1000000000000000,
-            board.get_bitboard(false, PieceType::King),
+            board.get_bitboard(false, piece_type::KING),
             "black king",
         );
         assert_eq!(board.get_halfmove_clock(), 0);
@@ -1253,62 +1262,62 @@ mod tests {
             Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0");
         test_bitboard(
             0x000000081000E700,
-            board.get_bitboard(true, PieceType::Pawn),
+            board.get_bitboard(true, piece_type::PAWN),
             "white pawns",
         );
         test_bitboard(
             0x002D500002800000,
-            board.get_bitboard(false, PieceType::Pawn),
+            board.get_bitboard(false, piece_type::PAWN),
             "black pawns",
         );
         test_bitboard(
             0x0000001000040000,
-            board.get_bitboard(true, PieceType::Knight),
+            board.get_bitboard(true, piece_type::KNIGHT),
             "white knights",
         );
         test_bitboard(
             0x0000220000000000,
-            board.get_bitboard(false, PieceType::Knight),
+            board.get_bitboard(false, piece_type::KNIGHT),
             "black knights",
         );
         test_bitboard(
             0x0000000000001800,
-            board.get_bitboard(true, PieceType::Bishop),
+            board.get_bitboard(true, piece_type::BISHOP),
             "white bishops",
         );
         test_bitboard(
             0x0040010000000000,
-            board.get_bitboard(false, PieceType::Bishop),
+            board.get_bitboard(false, piece_type::BISHOP),
             "black bishops",
         );
         test_bitboard(
             0x0000000000000081,
-            board.get_bitboard(true, PieceType::Rook),
+            board.get_bitboard(true, piece_type::ROOK),
             "white rooks",
         );
         test_bitboard(
             0x8100000000000000,
-            board.get_bitboard(false, PieceType::Rook),
+            board.get_bitboard(false, piece_type::ROOK),
             "black rooks",
         );
         test_bitboard(
             0x0000000000200000,
-            board.get_bitboard(true, PieceType::Queen),
+            board.get_bitboard(true, piece_type::QUEEN),
             "white queens",
         );
         test_bitboard(
             0x0010000000000000,
-            board.get_bitboard(false, PieceType::Queen),
+            board.get_bitboard(false, piece_type::QUEEN),
             "black queens",
         );
         test_bitboard(
             0x0000000000000010,
-            board.get_bitboard(true, PieceType::King),
+            board.get_bitboard(true, piece_type::KING),
             "white king",
         );
         test_bitboard(
             0x1000000000000000,
-            board.get_bitboard(false, PieceType::King),
+            board.get_bitboard(false, piece_type::KING),
             "black king",
         );
         assert_eq!(board.get_halfmove_clock(), 0);
@@ -1411,7 +1420,7 @@ mod tests {
         // Test pawn promotion
         let start_board = Board::from_fen("1b2k3/P7/8/8/8/8/8/4K3 w - - 0 1");
         let mut board = start_board.clone();
-        let mov = Move::pawn_promotion(A7, B8, PieceType::Queen);
+        let mov = Move::pawn_promotion(A7, B8, piece_type::QUEEN);
         let metadata = board.make_move(&mov);
         assert_eq!(board, Board::from_fen("1Q2k3/8/8/8/8/8/8/4K3 b - - 0 1"));
         board.unmake_move(&mov, metadata);

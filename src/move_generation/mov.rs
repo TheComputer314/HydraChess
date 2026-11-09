@@ -43,12 +43,12 @@ impl Move {
         Self::new(starting_index, ending_index, 0)
     }
 
-    pub fn pawn_promotion(starting_index: u8, ending_index: u8, promotion: PieceType) -> Self {
+    pub fn pawn_promotion(starting_index: u8, ending_index: u8, promotion: u8) -> Self {
         let flags = match promotion {
-            PieceType::Queen => 0b0100,
-            PieceType::Rook => 0b0101,
-            PieceType::Bishop => 0b0110,
-            PieceType::Knight => 0b0111,
+            piece_type::QUEEN => 0b0100,
+            piece_type::ROOK => 0b0101,
+            piece_type::BISHOP => 0b0110,
+            piece_type::KNIGHT => 0b0111,
             _ => panic!("Invalid promotion piece type"),
         };
         Self::new(starting_index, ending_index, flags)
@@ -124,14 +124,13 @@ impl Move {
     }
 }
 
-#[derive(PartialEq, Eq)]
-pub enum PieceType {
-    Pawn,
-    Knight,
-    Bishop,
-    Rook,
-    Queen,
-    King,
+pub mod piece_type {
+    pub const PAWN: u8 = 0;
+    pub const KNIGHT: u8 = 1;
+    pub const BISHOP: u8 = 2;
+    pub const ROOK: u8 = 3;
+    pub const QUEEN: u8 = 4;
+    pub const KING: u8 = 5;
 }
 
 // Shut clippy up about unused

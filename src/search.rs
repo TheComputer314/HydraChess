@@ -117,7 +117,15 @@ impl Search {
                 self.board
             );
         }
+
         let color = if self.board.white_to_move() { 1 } else { -1 };
+        let transposition_table_result = self.transposition_table.get(self.board.zobrist_hash);
+        let mut tt_move = None;
+        if let Some(result) = transposition_table_result {
+            tt_move = Some(result.best_move);
+        }
+        let legal_moves = self.sort_moves(&legal_moves, tt_move, color);
+
         let mut best_score = -i64::MAX;
         let mut best_move = &legal_moves[0];
         let max_depth = 16;
@@ -191,9 +199,9 @@ impl Search {
         if self.board.get_halfmove_clock() > 100 || self.board.times_played() >= 3 {
             return 0;
         }
-        let alpha_original = alpha;
         let mut alpha = alpha;
         let mut beta = beta;
+        let mut evaluation_type = 1;
 
         // Alpha can't possibly be worse than getting checkmated right now, if it is it means we already found a
         // faster mate elsewhere
@@ -236,7 +244,6 @@ impl Search {
 
         let sorted_moves = self.sort_moves(&moves, tt_move, color);
 
-        let mut best_value = -i64::MAX;
         let mut best_move = sorted_moves[0];
         for mov in sorted_moves {
             if !time_ok() {
@@ -245,26 +252,22 @@ impl Search {
             let metadata = self.board.make_move(&mov);
             let value = -self.negamax(depth - 1, search_ply + 1, -beta, -alpha, -color, time_ok);
             self.board.unmake_move(&mov, metadata);
-            if value > best_value {
-                best_value = value;
+            if value > alpha {
+                alpha = value;
+                evaluation_type = 0;
                 best_move = mov;
+                if alpha >= beta {
+                    alpha = beta;
+                    evaluation_type = -1;
+                    break;
+                }
             }
-            alpha = alpha.max(best_value);
-            if alpha >= beta {
-                break;
-            }
+
         }
 
-        let node_type = if alpha <= alpha_original {
-            1
-        } else if alpha >= beta {
-            -1
-        } else {
-            0
-        };
         self.transposition_table.insert(
             self.board.zobrist_hash,
-            EntryResult::new(depth, alpha, node_type, best_move),
+            EntryResult::new(depth, alpha, evaluation_type, best_move),
         );
         alpha
     }
@@ -276,6 +279,7 @@ impl Search {
         if !time_ok() {
             return 0;
         }
+        self.nodes_searched += 1;
         let mut alpha = alpha;
 
         let static_eval = Evaluation::evaluate(&self.board) * color;
@@ -292,13 +296,11 @@ impl Search {
         if check {
             moves = self.move_generator.legal_moves(&self.board);
             if moves.is_empty() {
-                self.nodes_searched += 1;
                 return Self::IMMEDIATE_MATE_SCORE;
             }
         } else {
             moves = self.move_generator.legal_captures(&self.board);
             if moves.is_empty() {
-                self.nodes_searched += 1;
                 return static_eval;
             }
         }
@@ -312,6 +314,7 @@ impl Search {
             let eval = -self.quiescence(-beta, -alpha, -color, time_ok);
             self.board.unmake_move(&mov, metadata);
             if eval >= beta {
+                self.nodes_searched += 1;
                 return beta;
             }
             if eval > alpha {
