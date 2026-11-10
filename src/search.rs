@@ -138,7 +138,7 @@ impl Search {
             let elapsed = timer.elapsed().as_millis();
             !stop_signal.load(Relaxed)
                 && elapsed < (time_left_ms / 20 + increment / 2)
-            && elapsed < 10000
+                && elapsed < 10000
         };
         'iterative_deepening: for depth in 0..max_depth {
             let mut depth_best_score = -i64::MAX;
@@ -225,7 +225,6 @@ impl Search {
                 0 // Draw by no legal moves
             };
         }
-        let moves = moves.into_iter().map(|mov| mov.0).collect();
 
         let tt_result = self.transposition_table.get(self.board.zobrist_hash);
         let mut tt_move = None;
@@ -245,9 +244,10 @@ impl Search {
         }
 
         if depth == 0 {
-            return self.quiescence(alpha, beta, search_ply + 1, color, time_ok);
+            return self.quiescence((moves, check), alpha, beta, search_ply + 1, color, time_ok);
         }
 
+        let moves = moves.into_iter().map(|mov| mov.0).collect();
         let sorted_moves = self.sort_moves(&moves, tt_move, color);
 
         let mut best_move = sorted_moves[0];
@@ -279,6 +279,7 @@ impl Search {
 
     fn quiescence<F>(
         &mut self,
+        moves: (Vec<(Move, Option<u8>)>, bool),
         alpha: i64,
         beta: i64,
         search_ply: i64,
@@ -291,7 +292,18 @@ impl Search {
         if !time_ok() {
             return 0;
         }
-        self.nodes_searched += 1;
+
+        let (mut moves, check) = moves;
+        if moves.is_empty() {
+            return if check {
+                search_ply - Self::IMMEDIATE_MATE_SCORE // Checkmate
+            } else {
+                0 // Draw by no legal moves
+            };
+        } else {
+            moves.retain(|mov| mov.1.is_some());
+        }
+
         let mut alpha = alpha;
 
         let static_eval = Evaluation::evaluate(&self.board) * color;
@@ -302,16 +314,6 @@ impl Search {
             alpha = static_eval;
         }
 
-        let (mut moves, check) = self.move_generator.legal_moves_with_metadata(&self.board);
-        if moves.is_empty() {
-            return if check {
-                search_ply - Self::IMMEDIATE_MATE_SCORE // Checkmate
-            } else {
-                0 // Draw by no legal moves
-            };
-        } else {
-            moves.retain(|mov| mov.1.is_some());
-        }
         let moves = moves.into_iter().map(|mov| mov.0).collect();
         let moves = self.sort_moves(&moves, None, color);
 
@@ -320,7 +322,14 @@ impl Search {
                 return alpha;
             }
             let metadata = self.board.make_move(&mov);
-            let eval = -self.quiescence(-beta, -alpha, search_ply + 1, -color, time_ok);
+            let eval = -self.quiescence(
+                self.move_generator.legal_moves_with_metadata(&self.board),
+                -beta,
+                -alpha,
+                search_ply + 1,
+                -color,
+                time_ok,
+            );
             self.board.unmake_move(&mov, metadata);
             if eval >= beta {
                 return beta;
