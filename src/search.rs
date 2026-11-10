@@ -305,7 +305,7 @@ impl Search {
         let (mut moves, check) = self.move_generator.legal_moves_with_metadata(&self.board);
         if moves.is_empty() {
             return if check {
-                Self::IMMEDIATE_MATE_SCORE - search_ply // Checkmate
+                search_ply - Self::IMMEDIATE_MATE_SCORE // Checkmate
             } else {
                 0 // Draw by no legal moves
             };
