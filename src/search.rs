@@ -140,7 +140,7 @@ impl Search {
                 && elapsed < (time_left_ms / 20 + increment / 2)
             && elapsed < 10000
         };
-        'iterative_deepening: for depth in 1..(max_depth + 1) {
+        'iterative_deepening: for depth in 0..max_depth {
             let mut depth_best_score = -i64::MAX;
             let mut depth_best_move = best_move;
             for mov in &legal_moves {
@@ -159,8 +159,8 @@ impl Search {
                     writeln!(
                         lock,
                         "info depth {} score mate {} nodes {}",
-                        depth,
-                        ((mate_in_ply + 1) / 2) * depth_best_score.signum(),
+                        depth + 1,
+                        ((mate_in_ply + 1) / 2) * depth_best_score.signum() * color,
                         self.nodes_searched
                     )
                     .unwrap();
@@ -170,7 +170,7 @@ impl Search {
                     writeln!(
                         lock,
                         "info depth {} score cp {} nodes {}",
-                        depth,
+                        depth + 1,
                         depth_best_score * color,
                         self.nodes_searched
                     )
