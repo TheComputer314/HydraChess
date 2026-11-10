@@ -153,14 +153,14 @@ impl Search {
                     depth_best_move = mov;
                 }
 
-                if depth_best_score.abs() > Self::IMMEDIATE_MATE_SCORE - 10000 {
+                if self.is_mate_score(depth_best_score) {
                     let mate_in_ply = Self::IMMEDIATE_MATE_SCORE - depth_best_score.abs();
                     let mut lock = out.lock();
                     writeln!(
                         lock,
                         "info depth {} score mate {} nodes {}",
                         depth + 1,
-                        ((mate_in_ply + 1) / 2) * depth_best_score.signum() * color,
+                        ((mate_in_ply + 1) / 2) * depth_best_score.signum(),
                         self.nodes_searched
                     )
                     .unwrap();
@@ -189,6 +189,10 @@ impl Search {
     }
 
     const IMMEDIATE_MATE_SCORE: i64 = i64::MAX / 2;
+
+    fn is_mate_score(&self, score: i64) -> bool {
+        score.abs() > Self::IMMEDIATE_MATE_SCORE - 100000
+    }
 
     fn negamax<F>(
         &mut self,
