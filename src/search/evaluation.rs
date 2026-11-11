@@ -213,7 +213,7 @@ impl Evaluation {
 
     const PIECE_VALUES: [i64; 6] = [100, 220, 430, 600, 1000, 20_000];
 
-    fn mvv_lva(attacker: usize, victim: usize) -> i64 {
+    pub fn mvv_lva(attacker: usize, victim: usize) -> i64 {
         Self::PIECE_VALUES[victim] * 10 - Self::PIECE_VALUES[attacker]
     }
 

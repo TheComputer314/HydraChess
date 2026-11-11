@@ -374,9 +374,8 @@ impl Search {
                     self.board.get_piece_at_square(mov.ending_index())
                 };
 
-                value = if capture_type.is_some() {
-                    let eval =
-                    Evaluation::static_exchange_evaluation(
+                value = if let Some(capture_type) = capture_type {
+                    let eval = Evaluation::static_exchange_evaluation(
                         &self.board,
                         mov,
                         &self.move_generator.lookup,
@@ -385,6 +384,12 @@ impl Search {
                         eval + (100_000 * eval.signum())
                     } else {
                         20_000
+                            + Evaluation::mvv_lva(
+                                self.board
+                                    .get_piece_at_square(mov.starting_index())
+                                    .unwrap() as usize,
+                                capture_type as usize,
+                            )
                     }
                 } else {
                     let metadata = self.board.make_move(mov);
