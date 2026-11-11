@@ -297,6 +297,10 @@ impl Search {
             return 0;
         }
 
+        if self.board.get_halfmove_clock() > 100 || self.board.times_played() >= 3 {
+            return 0;
+        }
+
         let (mut moves, check) = moves;
         if moves.is_empty() {
             return if check {
@@ -325,6 +329,15 @@ impl Search {
             if !time_ok() {
                 return alpha;
             }
+            let see = Evaluation::static_exchange_evaluation(
+                &self.board,
+                &mov,
+                &self.move_generator.lookup,
+            );
+            if see < 0 {
+                continue;
+            }
+
             let metadata = self.board.make_move(&mov);
             let eval = -self.quiescence(
                 self.move_generator.legal_moves_with_metadata(&self.board),
@@ -361,12 +374,18 @@ impl Search {
                     self.board.get_piece_at_square(mov.ending_index())
                 };
 
-                value = if let Some(capture_type) = capture_type {
-                    let attacker_type = self
-                        .board
-                        .get_piece_at_square(mov.starting_index())
-                        .unwrap();
-                    Evaluation::mvv_lva(attacker_type as usize, capture_type as usize) + (1 << 10)
+                value = if capture_type.is_some() {
+                    let eval =
+                    Evaluation::static_exchange_evaluation(
+                        &self.board,
+                        mov,
+                        &self.move_generator.lookup,
+                    );
+                    if eval != 0 {
+                        eval + (100_000 * eval.signum())
+                    } else {
+                        20_000
+                    }
                 } else {
                     let metadata = self.board.make_move(mov);
                     let eval = Evaluation::evaluate(&self.board) * color;

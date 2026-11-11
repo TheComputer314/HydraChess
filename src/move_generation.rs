@@ -8,7 +8,7 @@ pub mod mov;
 pub mod move_lookup;
 
 pub struct MoveGenerator {
-    lookup: MoveLookup,
+    pub lookup: MoveLookup,
 }
 
 impl MoveGenerator {

@@ -1,5 +1,8 @@
 use crate::move_generation::Board;
+use crate::move_generation::mov::Move;
 use crate::move_generation::mov::squares::mask;
+use crate::move_generation::move_lookup::MoveLookup;
+use std::cmp::max;
 
 macro_rules! piece_square_table {
     (
@@ -208,8 +211,208 @@ impl Evaluation {
         (a * (30 - t) + b * t) / 30
     }
 
-    pub fn mvv_lva(attacker: usize, victim: usize) -> i64 {
-        const PIECE_VALUES: [i64; 6] = [100, 220, 430, 600, 1000, 20_000];
-        PIECE_VALUES[victim] * 10 - PIECE_VALUES[attacker]
+    const PIECE_VALUES: [i64; 6] = [100, 220, 430, 600, 1000, 20_000];
+
+    fn mvv_lva(attacker: usize, victim: usize) -> i64 {
+        Self::PIECE_VALUES[victim] * 10 - Self::PIECE_VALUES[attacker]
+    }
+
+    pub fn static_exchange_evaluation(board: &Board, mov: &Move, move_lookup: &MoveLookup) -> i64 {
+        let mut gain = [0; 32];
+        let mut depth = 0;
+
+        let mut white = !board.white_to_move();
+        let mut occupied_squares = board.white | board.black;
+
+        let capture_type = if mov.flags() == 0b0001 {
+            0
+        } else {
+            match board.get_piece_at_square(mov.ending_index()) {
+                Some(piece_type) => piece_type as usize,
+                None => return 0,
+            }
+        };
+        gain[0] = Self::PIECE_VALUES[capture_type];
+
+        let mut current_attacker_type =
+            board.get_piece_at_square(mov.starting_index()).unwrap() as usize;
+        if current_attacker_type == 0 {
+            current_attacker_type = match mov.flags() {
+                0b0100 => 4,
+                0b0101 => 3,
+                0b0110 => 2,
+                0b0111 => 1,
+                _ => 0,
+            };
+        }
+
+        // The moving piece leaves its origin, and an en-passant capture also
+        // removes the pawn that is not on the destination square.
+        occupied_squares &= !mov.starting_mask();
+        if mov.flags() == 0b0001 {
+            let captured_pawn_square = if mov.ending_index() % 8 < mov.starting_index() % 8 {
+                mov.starting_index() - 1
+            } else {
+                mov.starting_index() + 1
+            };
+            occupied_squares &= !(1 << captured_pawn_square);
+        }
+        let mut attackers =
+            Self::get_attackers(board, mov.ending_index(), occupied_squares, move_lookup);
+
+        loop {
+            let friendly_pieces = if white { board.white } else { board.black };
+            let active_attackers = friendly_pieces & attackers & occupied_squares;
+
+            // Find the least valuable attacker available for this side
+            let mut chosen_square = None;
+            let mut selected_attacker_type = None;
+            for piece_type in 0..6 {
+                let piece_mask = match piece_type {
+                    0 => board.pawns,
+                    1 => board.knights,
+                    2 => board.bishops,
+                    3 => board.rooks,
+                    4 => board.queens,
+                    5 => board.kings,
+                    _ => u64::MAX,
+                };
+
+                let subset = active_attackers & piece_mask;
+                if subset != 0 {
+                    selected_attacker_type = Some(piece_type);
+                    chosen_square = Some(subset.trailing_zeros() as u8);
+                    break;
+                }
+            }
+
+            // If no captures to be made, break
+            let attacker_sq = match chosen_square {
+                Some(sq) => sq,
+                None => break,
+            };
+            let selected_attacker_type = selected_attacker_type.unwrap();
+
+            depth += 1;
+            gain[depth] = Self::PIECE_VALUES[current_attacker_type] - gain[depth - 1];
+            if max(-gain[depth - 1], gain[depth]) < 0 {
+                break;
+            }
+
+            // Remove the capturing piece from the virtual board state
+            occupied_squares &= !(1 << attacker_sq);
+
+            // Re-trigger Bishop/Queen rays through the newly vacant square
+            attackers |= move_lookup.possible_bishop_moves(mov.ending_index(), occupied_squares)
+                & (board.bishops | board.queens);
+            // Re-trigger Rook/Queen rays through the newly vacant square
+            attackers |= move_lookup.possible_rook_moves(mov.ending_index(), occupied_squares)
+                & (board.rooks | board.queens);
+
+            // If king capture
+            if selected_attacker_type == 5 {
+                let enemy_pieces = if white { board.black } else { board.white };
+                // And enemy pieces can attack the king post-move
+                if attackers & enemy_pieces & occupied_squares != 0 {
+                    depth -= 1; // Roll back this move, we're putting ourselves in check
+                }
+                break; // Break either way since king capture is always a last resort
+            }
+
+            current_attacker_type = selected_attacker_type;
+            if current_attacker_type == 0
+                && ((white && mov.ending_index() / 8 == 7)
+                    || (!white && mov.ending_index() / 8 == 0))
+            {
+                current_attacker_type = 4;
+            }
+            white = !white;
+        }
+
+        while depth > 0 {
+            gain[depth - 1] = -max(-gain[depth - 1], gain[depth]);
+            depth -= 1;
+        }
+
+        gain[0]
+    }
+
+    fn get_attackers(
+        board: &Board,
+        square: u8,
+        occupied_squares: u64,
+        move_lookup: &MoveLookup,
+    ) -> u64 {
+        let mut attackers = 0;
+
+        if square / 8 > 0 {
+            if square % 8 != 0 {
+                attackers |= (1 << (square - 9)) & board.pawns & board.white;
+            }
+            if square % 8 != 7 {
+                attackers |= (1 << (square - 7)) & board.pawns & board.white;
+            }
+        }
+        if square / 8 < 7 {
+            if square % 8 != 0 {
+                attackers |= (1 << (square + 7)) & board.pawns & board.black;
+            }
+            if square % 8 != 7 {
+                attackers |= (1 << (square + 9)) & board.pawns & board.black;
+            }
+        }
+
+        attackers |= move_lookup.possible_knight_moves(square) & board.knights;
+        attackers |= move_lookup.possible_bishop_moves(square, occupied_squares) & board.bishops;
+        attackers |= move_lookup.possible_rook_moves(square, occupied_squares) & board.rooks;
+        attackers |= move_lookup.possible_queen_moves(square, occupied_squares) & board.queens;
+        attackers |= move_lookup.possible_king_moves(square) & board.kings;
+        attackers
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Evaluation;
+    use crate::move_generation::Board;
+    use crate::move_generation::mov::Move;
+    use crate::move_generation::move_lookup::MoveLookup;
+
+    fn see(fen: &str, starting_square: u8, ending_square: u8) -> i64 {
+        let board = Board::from_fen(fen);
+        let lookup = MoveLookup::new();
+        Evaluation::static_exchange_evaluation(
+            &board,
+            &Move::regular(starting_square, ending_square),
+            &lookup,
+        )
+    }
+
+    #[test]
+    fn see_values_capture_without_recapture() {
+        assert_eq!(
+            see("4k3/8/8/8/3r4/2B5/8/4K3 w - - 0 1", 18, 27),
+            600
+        );
+    }
+
+    #[test]
+    fn see_accounts_for_a_recapture() {
+        assert_eq!(
+            see("4k3/8/8/4p3/3r4/2B5/8/4K3 w - - 0 1", 18, 27),
+            170
+        );
+    }
+
+    #[test]
+    fn see_uses_the_correct_pawn_attack_direction() {
+        assert_eq!(
+            see("4k3/8/8/3r4/4P3/8/8/4K3 w - - 0 1", 28, 35),
+            600
+        );
+        assert_eq!(
+            see("4k3/8/8/4p3/3R4/8/8/4K3 b - - 0 1", 36, 27),
+            600
+        );
     }
 }
