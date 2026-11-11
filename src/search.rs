@@ -153,36 +153,34 @@ impl Search {
                     depth_best_move = mov;
                 }
 
-                if self.is_mate_score(depth_best_score) {
-                    let mate_in_ply = Self::IMMEDIATE_MATE_SCORE - depth_best_score.abs();
-                    let mut lock = out.lock();
-                    writeln!(
-                        lock,
-                        "info depth {} score mate {} nodes {}",
-                        depth + 1,
-                        ((mate_in_ply + 1) / 2) * depth_best_score.signum(),
-                        self.nodes_searched
-                    )
-                    .unwrap();
-                    lock.flush().unwrap();
-                } else {
-                    let mut lock = out.lock();
-                    writeln!(
-                        lock,
-                        "info depth {} score cp {} nodes {}",
-                        depth + 1,
-                        depth_best_score * color,
-                        self.nodes_searched
-                    )
-                    .unwrap();
-                    lock.flush().unwrap();
-                }
-
                 if !time_ok() {
                     break 'iterative_deepening;
                 }
             }
             best_move = depth_best_move;
+
+            let mut lock = out.lock();
+            if self.is_mate_score(depth_best_score) {
+                let mate_in_ply = Self::IMMEDIATE_MATE_SCORE - depth_best_score.abs();
+                writeln!(
+                    lock,
+                    "info depth {} score mate {} nodes {}",
+                    depth + 1,
+                    ((mate_in_ply + 1) / 2) * depth_best_score.signum(),
+                    self.nodes_searched
+                )
+                .unwrap();
+            } else {
+                writeln!(
+                    lock,
+                    "info depth {} score cp {} nodes {}",
+                    depth + 1,
+                    depth_best_score * color,
+                    self.nodes_searched
+                )
+                .unwrap();
+            }
+            lock.flush().unwrap();
         }
 
         *best_move
