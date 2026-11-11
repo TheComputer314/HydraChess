@@ -31,7 +31,7 @@ impl MoveGenerator {
         let enemy_pieces = if white { board.black } else { board.white };
 
         let king_mask = friendly_pieces & board.kings;
-        // piece_type::KING is not included in the blockers, so that the king can't block a
+        // King is not included in the blockers, so that the king can't block a
         // move that would leave it in check post-move
         let blockers = board.all_pieces() & !king_mask;
         let (king_danger_mask, checkers, checker_index) =
@@ -39,7 +39,7 @@ impl MoveGenerator {
 
         let mut moves = Vec::new();
 
-        // piece_type::KING moves are restricted by the danger mask
+        // King moves are restricted by the danger mask
         let king_index = king_mask.trailing_zeros() as u8;
         let pseudo_legal_king_moves =
             self.lookup.possible_king_moves(king_index) & !friendly_pieces;
