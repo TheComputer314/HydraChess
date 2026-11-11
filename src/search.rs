@@ -164,19 +164,21 @@ impl Search {
                 let mate_in_ply = Self::IMMEDIATE_MATE_SCORE - depth_best_score.abs();
                 writeln!(
                     lock,
-                    "info depth {} score mate {} nodes {}",
+                    "info depth {} score mate {} nodes {} nps {}",
                     depth + 1,
                     ((mate_in_ply + 1) / 2) * depth_best_score.signum(),
-                    self.nodes_searched
+                    self.nodes_searched,
+                    self.nodes_searched as f64 / timer.elapsed().as_secs_f64()
                 )
-                .unwrap();
+                    .unwrap();
             } else {
                 writeln!(
                     lock,
-                    "info depth {} score cp {} nodes {}",
+                    "info depth {} score cp {} nodes {} nps {}",
                     depth + 1,
                     depth_best_score * color,
-                    self.nodes_searched
+                    self.nodes_searched,
+                    self.nodes_searched as f64 / timer.elapsed().as_secs_f64()
                 )
                 .unwrap();
             }
