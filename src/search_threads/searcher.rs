@@ -1,7 +1,7 @@
 use crate::move_generation;
-use crate::move_generation::{Board, Moves, MovesWithMetadata};
 use crate::move_generation::mov::Move;
 use crate::move_generation::mov::piece_type::PAWN;
+use crate::move_generation::{Board, Moves, MovesWithMetadata};
 use crate::search_threads::evaluation;
 use crate::search_threads::transposition_table::{EntryResult, TranspositionTable};
 use minstant::Instant;
@@ -12,11 +12,21 @@ use std::io::stdout;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
+const MAX_DEPTH: u8 = 8;
+
 pub struct Search {
     pub(crate) nodes_searched: u64,
+    killer_moves: [Option<Move>; MAX_DEPTH as usize],
 }
 
 impl Search {
+    pub fn new() -> Self {
+        Self {
+            nodes_searched: 0,
+            killer_moves: [None; MAX_DEPTH as usize],
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn search(
         &mut self,
@@ -29,6 +39,7 @@ impl Search {
         search_id: usize,
     ) -> Move {
         self.nodes_searched = 0;
+        self.killer_moves.fill(None);
         let legal_moves = move_generation::legal_moves(board);
         if legal_moves.length == 0 {
             panic!(
@@ -46,7 +57,7 @@ impl Search {
         if let Some(result) = transposition_table_result {
             tt_move = Some(result.best_move);
         }
-        let mut legal_moves = self.sort_moves(board, &legal_moves, tt_move, color);
+        let mut legal_moves = self.sort_moves(board, &legal_moves, tt_move, None, color);
         if search_id > 0 {
             legal_moves.shuffle(&mut rand::rng());
         }
@@ -54,7 +65,6 @@ impl Search {
 
         let mut best_score = -i32::MAX;
         let mut best_move = &legal_moves[0];
-        let max_depth = 16;
         let timer = Instant::now();
         let time_ok = || {
             let elapsed = timer.elapsed().as_millis() as u64;
@@ -62,7 +72,7 @@ impl Search {
                 && elapsed < (time_left_ms / 20 + increment / 2)
                 && elapsed < 10000
         };
-        'iterative_deepening: for depth in 0..max_depth {
+        'iterative_deepening: for depth in 0..MAX_DEPTH {
             let mut depth_best_score = -i32::MAX;
             let mut depth_best_move = best_move;
             for mov in &legal_moves {
@@ -207,7 +217,13 @@ impl Search {
         }
 
         let moves = moves.strip_metadata();
-        let mut sorted_moves = self.sort_moves(board, &moves, tt_move, color);
+        let mut sorted_moves = self.sort_moves(
+            board,
+            &moves,
+            tt_move,
+            self.killer_moves[(search_ply - 1) as usize],
+            color,
+        );
 
         let mut best_move = sorted_moves[0];
         for mov in sorted_moves {
@@ -234,6 +250,7 @@ impl Search {
                 if alpha >= beta {
                     alpha = beta;
                     evaluation_type = -1;
+                    self.killer_moves[(search_ply - 1) as usize] = Some(mov);
                     break;
                 }
             }
@@ -290,7 +307,7 @@ impl Search {
         }
 
         let moves = moves.filter_captures();
-        let moves = self.sort_moves(board, &moves, None, color);
+        let moves = self.sort_moves(board, &moves, None, None, color);
 
         for mov in moves {
             if !time_ok() {
@@ -329,6 +346,7 @@ impl Search {
         board: &mut Board,
         moves: &Moves,
         tt_move: Option<Move>,
+        killer_move: Option<Move>,
         color: i32,
     ) -> Vec<Move> {
         let mut sorted_moves: Vec<(&Move, i32)> = Vec::with_capacity(moves.length);
@@ -336,9 +354,17 @@ impl Search {
             let mov = &moves.moves[i];
             let value;
             if let Some(tt_move) = tt_move
-                && &tt_move == mov
+                && tt_move.eq(mov)
             {
                 value = 1 << 20;
+            } else if let Some(killer_move) = killer_move
+                && killer_move.eq(mov)
+            {
+                if board.get_piece_at_square(mov.ending_index()).is_none() {
+                    value = 10_000; // If killer move is quiet, score below captures but above normal quiets
+                } else {
+                    value = 1 << 19; // If capture, score below TT best move but above everything else
+                }
             } else {
                 let capture_type = if mov.flags() == 0b0001 {
                     Some(PAWN)
@@ -349,9 +375,9 @@ impl Search {
                 value = if let Some(capture_type) = capture_type {
                     let eval = evaluation::static_exchange_evaluation(board, mov);
                     if eval != 0 {
-                        eval + (100_000 * eval.signum())
+                        eval + (100_000 * eval.signum()) // Bad captures are scored below quiet moves
                     } else {
-                        20_000
+                        30_000
                             + evaluation::mvv_lva(
                                 board.get_piece_at_square(mov.starting_index()).unwrap() as usize,
                                 capture_type as usize,

@@ -46,7 +46,8 @@ pub struct SearchThreads {
     moves_played: u32,
 }
 
-const SEARCH_THREADS: usize = 4;
+// TODO: Don't hardcode
+const SEARCH_THREADS: usize = 1;
 
 impl SearchThreads {
     pub fn new(signals: Signals) -> Self {
@@ -81,7 +82,7 @@ impl SearchThreads {
             let stop_signal = Arc::clone(&signals.stop_signal);
             let quit_signal = Arc::clone(&signals.quit_signal);
             thread::spawn(move || {
-                let mut search = Search { nodes_searched: 0 };
+                let mut search = Search::new();
                 loop {
                     state.start_barrier.wait();
                     sleep(Duration::from_millis((i as u64) * 2));
