@@ -92,12 +92,12 @@ impl Search {
                         nodes_searched.load(Ordering::Relaxed) + (self.nodes_searched & 2047);
                     let mut out = stdout().lock();
                     if self.is_mate_score(score) {
-                        let mate_in_ply = Self::IMMEDIATE_MATE_SCORE - depth_best_score.abs();
+                        let mate_in_ply = Self::IMMEDIATE_MATE_SCORE - best_score.abs();
                         writeln!(
                             out,
                             "info depth {} score mate {} time {} nodes {} nps {}",
                             depth + 1,
-                            ((mate_in_ply + 1) / 2) * depth_best_score.signum(),
+                            ((mate_in_ply + 1) / 2) * best_score.signum(),
                             time,
                             nodes,
                             nodes as f64 / time
