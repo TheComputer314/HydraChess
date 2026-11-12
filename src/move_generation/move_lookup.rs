@@ -14,7 +14,7 @@ fn get_mask_subsets(blocker: u64) -> Vec<u64> {
     subsets
 }
 
-const ROOK_MOVES: LazyLock<[Vec<u64>; 64]> = LazyLock::new(|| {
+static ROOK_MOVES: LazyLock<[Vec<u64>; 64]> = LazyLock::new(|| {
     let mut moves = [const { Vec::new() }; 64];
     let mut i = 0;
     while i < 64 {
@@ -86,7 +86,7 @@ pub fn possible_rook_moves(square: u8, blocker_pieces: u64) -> u64 {
     mask
 }
 
-const BISHOP_MOVES: LazyLock<[Vec<u64>; 64]> = LazyLock::new(|| {
+static BISHOP_MOVES: LazyLock<[Vec<u64>; 64]> = LazyLock::new(|| {
     let mut moves = [const { Vec::new() }; 64];
     let mut i = 0;
     while i < 64 {
@@ -196,6 +196,12 @@ const fn bishop_occupancy_mask(square: u8) -> u64 {
 
     mask
 }
+
+pub fn initialize() {
+    LazyLock::force(&ROOK_MOVES);
+    LazyLock::force(&BISHOP_MOVES);
+}
+
 pub fn possible_bishop_moves(square: u8, blocker_pieces: u64) -> u64 {
     let mask;
     unsafe {

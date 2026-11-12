@@ -50,6 +50,9 @@ const SEARCH_THREADS: usize = 4;
 
 impl SearchThreads {
     pub fn new(signals: Signals) -> Self {
+        // Warm up the LazyLock'd lookups
+        move_generation::move_lookup::initialize();
+
         // Coordinator thread is +1
         let total_threads = SEARCH_THREADS + 1;
 
@@ -277,6 +280,7 @@ impl Search {
             best_move = depth_best_move;
         }
 
+        nodes_searched.fetch_add(self.nodes_searched % 2047, Ordering::Relaxed);
         *best_move
     }
 

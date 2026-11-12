@@ -16,15 +16,6 @@ impl Entry {
     }
 }
 
-impl Entry {
-    pub fn new() -> Self {
-        Self {
-            zobrist_key_xor_data: AtomicU64::new(0),
-            data: AtomicU64::new(0),
-        }
-    }
-}
-
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct EntryResult {
     pub score: i32,
@@ -86,6 +77,15 @@ impl TranspositionTable {
         let index = zobrist_key as usize % self.size;
         let entry = &self.table[index];
         let data = Entry::data_from_entry_result(entry_result);
+
+        // Account for search depth when overriding
+        let current_data = entry.data.load(Ordering::Relaxed);
+        if entry.zobrist_key_xor_data.load(Ordering::Relaxed) == zobrist_key ^ current_data
+            && EntryResult::from_u64(current_data).depth >= entry_result.depth
+        {
+            return;
+        }
+
         entry
             .zobrist_key_xor_data
             .store(zobrist_key ^ data, Ordering::Relaxed);
@@ -106,8 +106,20 @@ mod tests {
             depth: 4,
             node_type: 0,
         };
-        let mut table = TranspositionTable::new(1);
+        let table = TranspositionTable::new(1);
         table.insert(0, entry_result);
         assert_eq!(table.get(0), Some(entry_result));
+    }
+
+    #[test]
+    fn deeper_entry_is_not_replaced_by_shallower_entry() {
+        let table = TranspositionTable::new(1);
+        let deep = EntryResult::new(8, 100, 0, Move::left_en_passant(10));
+        let shallow = EntryResult::new(4, -100, 1, Move::null());
+
+        table.insert(0, deep);
+        table.insert(0, shallow);
+
+        assert_eq!(table.get(0), Some(deep));
     }
 }
