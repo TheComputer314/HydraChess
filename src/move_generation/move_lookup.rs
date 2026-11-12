@@ -266,13 +266,13 @@ pub const fn possible_king_moves(square: u8) -> u64 {
 #[cfg(test)]
 mod tests {
     use crate::move_generation::mov::squares::{A1, C3, G3, H4, H8};
-    use std::time::Instant;
     use crate::move_generation::move_lookup::*;
+    use std::time::Instant;
 
     #[test]
     fn time_loading() {
         let start = Instant::now();
-        let _ = possible_queen_moves(0,0);
+        let _ = possible_queen_moves(0, 0);
         println!("Time taken to load MoveLookup: {:?}", start.elapsed());
     }
 
@@ -291,14 +291,8 @@ mod tests {
     #[test]
     fn test_lookup() {
         assert_eq!(possible_rook_moves(C3, 0), 289360691368494084);
-        assert_eq!(
-            possible_rook_moves(C3, 17867064999936),
-            289360691353814020
-        );
-        assert_eq!(
-            possible_rook_moves(C3, 17867069194240),
-            289360691353814020
-        );
+        assert_eq!(possible_rook_moves(C3, 17867064999936), 289360691353814020);
+        assert_eq!(possible_rook_moves(C3, 17867069194240), 289360691353814020);
         assert_eq!(possible_bishop_moves(C3, 0), 9241421692918565393);
         assert_eq!(possible_bishop_moves(C3, 134217728), 4462742033);
         assert_eq!(possible_bishop_moves(C3, 35184506306560), 4462742033);

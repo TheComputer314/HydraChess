@@ -1,7 +1,7 @@
 mod move_generation;
-mod search;
+mod search_threads;
 
-use crate::search::{SearchThreads, Signals};
+use crate::search_threads::{SearchThreads, Signals};
 use std::io::{self, BufRead, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -361,7 +361,7 @@ fn get_attackers(board: &Board, square: u8, occupied_squares: u64) -> u64 {
 mod tests {
     use crate::move_generation::Board;
     use crate::move_generation::mov::Move;
-    use crate::search::evaluation::static_exchange_evaluation;
+    use crate::search_threads::evaluation::static_exchange_evaluation;
 
     fn see(fen: &str, starting_square: u8, ending_square: u8) -> i32 {
         let board = Board::from_fen(fen);

@@ -30,8 +30,7 @@ pub fn legal_moves_with_metadata(board: &Board) -> (Vec<(Move, Option<u8>)>, boo
 
     // King moves are restricted by the danger mask
     let king_index = king_mask.trailing_zeros() as u8;
-    let pseudo_legal_king_moves =
-        move_lookup::possible_king_moves(king_index) & !friendly_pieces;
+    let pseudo_legal_king_moves = move_lookup::possible_king_moves(king_index) & !friendly_pieces;
     let legal_king_moves = pseudo_legal_king_moves & !king_danger_mask;
     for i in get_indices_of_bits(legal_king_moves) {
         moves.push((Move::regular(king_index, i), board.get_piece_at_square(i)));
@@ -64,8 +63,8 @@ pub fn legal_moves_with_metadata(board: &Board) -> (Vec<(Move, Option<u8>)>, boo
                 block_mask =
                     move_lookup::possible_rook_moves(checker_index, king_mask) & king_rook_mask;
             } else if checker_mask & king_bishop_mask != 0 {
-                block_mask = move_lookup::possible_bishop_moves(checker_index, king_mask)
-                    & king_bishop_mask;
+                block_mask =
+                    move_lookup::possible_bishop_moves(checker_index, king_mask) & king_bishop_mask;
             }
         } else if board.pawns & checker_mask != 0 || board.knights & checker_mask != 0 {
             block_mask = 0;
@@ -96,15 +95,13 @@ pub fn legal_moves_with_metadata(board: &Board) -> (Vec<(Move, Option<u8>)>, boo
     let mut cardinal_pin_rays = Vec::new();
     let mut diagonal_pin_rays = Vec::new();
 
-    let attacking_cardinal_sliders =
-        king_rook_mask & enemy_pieces & (board.rooks | board.queens);
+    let attacking_cardinal_sliders = king_rook_mask & enemy_pieces & (board.rooks | board.queens);
     for i in get_indices_of_bits(attacking_cardinal_sliders) {
         let attacked_squares = move_lookup::
         // We invert the king rook mask to block any moves that are not on the ray between the king and the attacker
         // But also add the king mask to block the ray from going past the king
-        possible_rook_moves(
-            i, !king_rook_mask | king_mask
-        ) & king_rook_mask;
+        possible_rook_moves(i, !king_rook_mask | king_mask)
+            & king_rook_mask;
         if (attacked_squares & friendly_pieces).count_ones() == 1 {
             cardinal_pin_rays.push(attacked_squares | (1 << i));
         }
@@ -113,8 +110,7 @@ pub fn legal_moves_with_metadata(board: &Board) -> (Vec<(Move, Option<u8>)>, boo
         king_bishop_mask & enemy_pieces & (board.bishops | board.queens);
     for i in get_indices_of_bits(attacking_diagonal_sliders) {
         let attacked_squares =
-            move_lookup::possible_bishop_moves(i, !king_bishop_mask | king_mask)
-                & king_bishop_mask;
+            move_lookup::possible_bishop_moves(i, !king_bishop_mask | king_mask) & king_bishop_mask;
         if (attacked_squares & friendly_pieces).count_ones() == 1 {
             diagonal_pin_rays.push(attacked_squares | (1 << i));
         }
@@ -172,10 +168,7 @@ pub fn legal_moves_with_metadata(board: &Board) -> (Vec<(Move, Option<u8>)>, boo
                         // Double pawn push
                         let double_push_square = if white { i + 16 } else { i - 16 };
                         let double_push_mask = 1 << double_push_square;
-                        if double_push_mask
-                            & cardinal_pin_mask
-                            & block_mask
-                            & !board.all_pieces()
+                        if double_push_mask & cardinal_pin_mask & block_mask & !board.all_pieces()
                             != 0
                         {
                             moves.push((Move::double_pawn_push(i), None));
@@ -191,23 +184,14 @@ pub fn legal_moves_with_metadata(board: &Board) -> (Vec<(Move, Option<u8>)>, boo
                 if i % 8 > 0 {
                     let left_capture_square = push_square - 1;
                     let left_capture_mask = 1 << left_capture_square;
-                    if left_capture_mask & diagonal_pin_mask & capture_mask & enemy_pieces != 0
-                    {
+                    if left_capture_mask & diagonal_pin_mask & capture_mask & enemy_pieces != 0 {
                         if push_square / 8 == final_rank {
                             moves.push((
-                                Move::pawn_promotion(
-                                    i,
-                                    left_capture_square,
-                                    piece_type::KNIGHT,
-                                ),
+                                Move::pawn_promotion(i, left_capture_square, piece_type::KNIGHT),
                                 board.get_piece_at_square(left_capture_square),
                             ));
                             moves.push((
-                                Move::pawn_promotion(
-                                    i,
-                                    left_capture_square,
-                                    piece_type::BISHOP,
-                                ),
+                                Move::pawn_promotion(i, left_capture_square, piece_type::BISHOP),
                                 board.get_piece_at_square(left_capture_square),
                             ));
                             moves.push((
@@ -229,23 +213,14 @@ pub fn legal_moves_with_metadata(board: &Board) -> (Vec<(Move, Option<u8>)>, boo
                 if i % 8 < 7 {
                     let right_capture_square = push_square + 1;
                     let right_capture_mask = 1 << right_capture_square;
-                    if right_capture_mask & diagonal_pin_mask & capture_mask & enemy_pieces != 0
-                    {
+                    if right_capture_mask & diagonal_pin_mask & capture_mask & enemy_pieces != 0 {
                         if push_square / 8 == final_rank {
                             moves.push((
-                                Move::pawn_promotion(
-                                    i,
-                                    right_capture_square,
-                                    piece_type::KNIGHT,
-                                ),
+                                Move::pawn_promotion(i, right_capture_square, piece_type::KNIGHT),
                                 board.get_piece_at_square(right_capture_square),
                             ));
                             moves.push((
-                                Move::pawn_promotion(
-                                    i,
-                                    right_capture_square,
-                                    piece_type::BISHOP,
-                                ),
+                                Move::pawn_promotion(i, right_capture_square, piece_type::BISHOP),
                                 board.get_piece_at_square(right_capture_square),
                             ));
                             moves.push((
@@ -253,11 +228,7 @@ pub fn legal_moves_with_metadata(board: &Board) -> (Vec<(Move, Option<u8>)>, boo
                                 board.get_piece_at_square(right_capture_square),
                             ));
                             moves.push((
-                                Move::pawn_promotion(
-                                    i,
-                                    right_capture_square,
-                                    piece_type::QUEEN,
-                                ),
+                                Move::pawn_promotion(i, right_capture_square, piece_type::QUEEN),
                                 board.get_piece_at_square(right_capture_square),
                             ));
                         } else {
@@ -298,7 +269,7 @@ pub fn legal_moves_with_metadata(board: &Board) -> (Vec<(Move, Option<u8>)>, boo
                             let end_mask = if white { mask << 7 } else { mask >> 9 };
                             if end_mask & block_mask & diagonal_pin_mask != 0
                                 || (end_mask & diagonal_pin_mask != 0
-                                && capture_mask & (1 << capture_square) != 0)
+                                    && capture_mask & (1 << capture_square) != 0)
                             {
                                 moves.push((Move::left_en_passant(i), Some(piece_type::PAWN)));
                             }
@@ -722,12 +693,7 @@ mod tests {
             if entry_hash == board.zobrist_hash {
                 total_moves += entry_nodes;
             } else {
-                let nodes = perft(
-                    board,
-                    depth - 1,
-                    transposition_tables,
-                    false,
-                );
+                let nodes = perft(board, depth - 1, transposition_tables, false);
                 if divide {
                     println!("Move {}: {} nodes", mov, nodes);
                 }

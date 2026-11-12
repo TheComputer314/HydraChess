@@ -79,7 +79,7 @@ impl TranspositionTable {
         let entry = &self.table[index];
         let data = Entry::data_from_entry_result(entry_result);
 
-        // Account for search depth when overriding
+        // Account for search_threads depth when overriding
         let current_data = entry.data.load(Ordering::Relaxed);
         if entry.zobrist_key_xor_data.load(Ordering::Relaxed) == zobrist_key ^ current_data
             && EntryResult::from_u64(current_data).depth >= entry_result.depth
@@ -104,7 +104,7 @@ impl TranspositionTable {
 #[cfg(test)]
 mod tests {
     use crate::move_generation::mov::Move;
-    use crate::search::transposition_table::{EntryResult, TranspositionTable};
+    use crate::search_threads::transposition_table::{EntryResult, TranspositionTable};
 
     #[test]
     fn test_load_unload() {
