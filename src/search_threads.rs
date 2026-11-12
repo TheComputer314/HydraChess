@@ -47,7 +47,7 @@ pub struct SearchThreads {
 }
 
 // TODO: Don't hardcode
-const SEARCH_THREADS: usize = 1;
+const SEARCH_THREADS: usize = 4;
 
 impl SearchThreads {
     pub fn new(signals: Signals) -> Self {
