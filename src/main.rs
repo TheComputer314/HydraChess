@@ -1,7 +1,7 @@
 mod move_generation;
 mod search;
 
-use crate::search::SearchThreads;
+use crate::search::{SearchThreads, Signals};
 use std::io::{self, BufRead, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -25,9 +25,19 @@ fn main() {
 
     let (cmd_tx, cmd_rx) = channel::<EngineCommand>();
     let stop_signal = Arc::new(AtomicBool::new(false));
+    let quit_signal = Arc::new(AtomicBool::new(false));
 
     let stop_signal_clone = stop_signal.clone();
-    let search_thread_handle = thread::spawn(move || search_loop(cmd_rx, stop_signal_clone));
+    let quit_signal_clone = quit_signal.clone();
+    let search_thread_handle = thread::spawn(move || {
+        search_loop(
+            cmd_rx,
+            Signals {
+                stop_signal: stop_signal_clone,
+                quit_signal: quit_signal_clone,
+            },
+        )
+    });
 
     // UCI main loop: read commands from stdin line by line.
     while let Some(Ok(line)) = stdin_lines.next() {
@@ -62,11 +72,11 @@ fn main() {
             "go" => {
                 let (white_time_left_ms, white_increment, black_time_left_ms, black_increment) =
                     if parts.len() < 2 || parts[1] == "infinite" {
-                        (u128::MAX, 0, u128::MAX, 0)
+                        (u64::MAX, 0, u64::MAX, 0)
                     } else {
-                        let mut temp_white_time_left_ms = u128::MAX;
+                        let mut temp_white_time_left_ms = u64::MAX;
                         let mut temp_white_increment = 0;
-                        let mut temp_black_time_left_ms = u128::MAX;
+                        let mut temp_black_time_left_ms = u64::MAX;
                         let mut temp_black_increment = 0;
 
                         let mut i = 1;
@@ -119,6 +129,7 @@ fn main() {
             }
             "quit" => {
                 stop_signal.store(true, Ordering::Relaxed);
+                quit_signal.store(true, Ordering::Relaxed);
                 cmd_tx.send(EngineCommand::Quit).unwrap();
                 search_thread_handle.join().unwrap();
                 break;
@@ -136,17 +147,17 @@ enum EngineCommand {
         position: String,
     },
     Go {
-        white_time_left_ms: u128,
-        white_increment: u128,
-        black_time_left_ms: u128,
-        black_increment: u128,
+        white_time_left_ms: u64,
+        white_increment: u64,
+        black_time_left_ms: u64,
+        black_increment: u64,
     },
     Debug,
     Quit,
 }
 
-fn search_loop(cmd_rx: Receiver<EngineCommand>, stop_signal: Arc<AtomicBool>) {
-    let mut search = SearchThreads::new();
+fn search_loop(cmd_rx: Receiver<EngineCommand>, signals: Signals) {
+    let mut search = SearchThreads::new(signals);
     while let Ok(cmd) = cmd_rx.recv() {
         match cmd {
             EngineCommand::NewGame => {
@@ -161,9 +172,7 @@ fn search_loop(cmd_rx: Receiver<EngineCommand>, stop_signal: Arc<AtomicBool>) {
                 black_time_left_ms,
                 black_increment,
             } => {
-                stop_signal.store(false, Ordering::Relaxed);
                 search.go(
-                    &stop_signal,
                     white_time_left_ms,
                     white_increment,
                     black_time_left_ms,
@@ -173,7 +182,9 @@ fn search_loop(cmd_rx: Receiver<EngineCommand>, stop_signal: Arc<AtomicBool>) {
             EngineCommand::Debug => {
                 search.debug();
             }
-            EngineCommand::Quit => break,
+            EngineCommand::Quit => {
+                break;
+            }
         }
     }
 }

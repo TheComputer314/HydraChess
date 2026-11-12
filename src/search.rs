@@ -12,27 +12,33 @@ use std::io::stdout;
 use std::io::{Stdout, Write};
 use std::sync::Mutex;
 use std::sync::atomic::Ordering::Relaxed;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Barrier};
 use std::thread;
 use std::thread::JoinHandle;
 
 struct SearchResult {
-    depth: usize,
-    score: i32,
+    // TODO
+    // depth: usize,
+    // score: i32,
     best_move: Move,
-    pv: Vec<Move>,
+    // pv: Vec<Move>,
 }
 
 struct SharedState {
-    stop_signal: AtomicBool,
-    quit_signal: AtomicBool,
+    time_left: AtomicU64,
+    increment: AtomicU64,
     start_barrier: Barrier,
     end_barrier: Barrier,
     root_board: Mutex<Board>,
     // Transposition table is lock-free to allow TT improvements in one thread to improve search in another
     transposition_table: TranspositionTable,
-    results: Vec<SearchResult>,
+    results: Vec<Mutex<SearchResult>>,
+}
+
+pub struct Signals {
+    pub stop_signal: Arc<AtomicBool>,
+    pub quit_signal: Arc<AtomicBool>,
 }
 
 pub struct SearchThreads {
@@ -44,13 +50,13 @@ pub struct SearchThreads {
 const SEARCH_THREADS: usize = 4;
 
 impl SearchThreads {
-    pub fn new() -> Self {
+    pub fn new(signals: Signals) -> Self {
         // Coordinator thread is +1
         let total_threads = SEARCH_THREADS + 1;
 
         let shared_state = Arc::new(SharedState {
-            stop_signal: AtomicBool::new(false),
-            quit_signal: AtomicBool::new(false),
+            time_left: AtomicU64::new(0),
+            increment: AtomicU64::new(0),
             start_barrier: Barrier::new(total_threads),
             end_barrier: Barrier::new(total_threads),
             root_board: Mutex::new(Board::starting()),
@@ -62,11 +68,13 @@ impl SearchThreads {
 
         for i in 0..SEARCH_THREADS {
             let state = Arc::clone(&shared_state);
+            let stop_signal = Arc::clone(&signals.stop_signal);
+            let quit_signal = Arc::clone(&signals.quit_signal);
             handles.push(thread::spawn(move || {
                 let search = Search {};
                 loop {
                     state.start_barrier.wait();
-                    if state.quit_signal.load(Ordering::Acquire) {
+                    if quit_signal.load(Ordering::Acquire) {
                         break;
                     }
                     let mut board = state.root_board.lock().unwrap().clone();
@@ -74,13 +82,15 @@ impl SearchThreads {
                     let search = search.search(
                         &mut board,
                         &state.transposition_table,
-                        &state.stop_signal,
-                        10000,
-                        0,
+                        &stop_signal,
+                        state.time_left.load(Relaxed),
+                        state.increment.load(Relaxed),
                     );
 
-
-
+                    state.results[i].lock().unwrap().best_move = search;
+                    if quit_signal.load(Ordering::Acquire) {
+                        break;
+                    }
                     state.end_barrier.wait();
                 }
             }));
@@ -134,18 +144,19 @@ impl SearchThreads {
 
     pub fn go(
         &mut self,
-        stop_signal: &Arc<AtomicBool>,
-        white_time_left_ms: u128,
-        white_increment: u128,
-        black_time_left_ms: u128,
-        black_increment: u128,
+        white_time_left_ms: u64,
+        white_increment: u64,
+        black_time_left_ms: u64,
+        black_increment: u64,
     ) {
-        let (time_left_ms, increment) = if true {
-            (white_time_left_ms, white_increment)
-        } else {
-            (black_time_left_ms, black_increment)
-        };
-        todo!()
+        let (time_left_ms, increment) =
+            if self.shared_state.root_board.lock().unwrap().white_to_move() {
+                (white_time_left_ms, white_increment)
+            } else {
+                (black_time_left_ms, black_increment)
+            };
+        self.shared_state.time_left.store(time_left_ms, Relaxed);
+        self.shared_state.increment.store(increment, Relaxed);
     }
 }
 
@@ -157,8 +168,8 @@ impl Search {
         board: &mut Board,
         transposition_table: &TranspositionTable,
         stop_signal: &AtomicBool,
-        time_left_ms: u128,
-        increment: u128,
+        time_left_ms: u64,
+        increment: u64,
     ) -> Move {
         let legal_moves = move_generation::legal_moves(board);
         if legal_moves.is_empty() {
@@ -183,7 +194,7 @@ impl Search {
         let max_depth = 16;
         let timer = Instant::now();
         let time_ok = || {
-            let elapsed = timer.elapsed().as_millis();
+            let elapsed = timer.elapsed().as_millis() as u64;
             !stop_signal.load(Relaxed)
                 && elapsed < (time_left_ms / 20 + increment / 2)
                 && elapsed < 10000
