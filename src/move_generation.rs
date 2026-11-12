@@ -6,15 +6,61 @@ pub mod board_state;
 pub mod mov;
 pub mod move_lookup;
 
-pub fn legal_moves(board: &Board) -> Vec<Move> {
-    legal_moves_with_metadata(board)
-        .0
-        .into_iter()
-        .map(|(m, _)| m)
-        .collect()
+pub struct Moves {
+    pub moves: [Move; 218],
+    pub length: usize,
 }
 
-pub fn legal_moves_with_metadata(board: &Board) -> (Vec<(Move, Option<u8>)>, bool) {
+impl Moves {
+    pub fn empty() -> Self {
+        Moves {
+            moves: [Move::null(); 218],
+            length: 0,
+        }
+    }
+
+    fn push(&mut self, mov: Move) {
+        self.moves[self.length] = mov;
+        self.length += 1;
+    }
+}
+
+pub fn legal_moves(board: &Board) -> Moves {
+    legal_moves_with_metadata(board).strip_metadata()
+}
+
+pub struct MovesWithMetadata {
+    moves: [(Move, Option<u8>); 218],
+    pub(crate) length: usize,
+    pub(crate) check: bool,
+}
+
+impl MovesWithMetadata {
+    fn push(&mut self, move_with_metadata: (Move, Option<u8>)) {
+        self.moves[self.length] = move_with_metadata;
+        self.length += 1;
+    }
+    
+    pub fn strip_metadata(&self) -> Moves {
+        let mut moves = Moves::empty();
+        for i in 0..self.length {
+            moves.push(self.moves[i].0);
+        }
+        moves
+    }
+    
+    pub fn filter_captures(&self) -> Moves {
+        let mut moves = Moves::empty();
+        for i in 0..self.length {
+            if self.moves[i].1.is_some() {
+                moves.push(self.moves[i].0);
+            }
+        }
+        moves
+    }
+}
+
+pub fn legal_moves_with_metadata(board: &Board) -> MovesWithMetadata {
     let white = board.white_to_move();
     let friendly_pieces = if white { board.white } else { board.black };
     let enemy_pieces = if white { board.black } else { board.white };
@@ -26,7 +72,11 @@ pub fn legal_moves_with_metadata(board: &Board) -> (Vec<(Move, Option<u8>)>, boo
     let (king_danger_mask, checkers, checker_index) =
         king_danger_mask(board, white, enemy_pieces, king_mask, blockers);
 
-    let mut moves = Vec::new();
+    let mut moves = MovesWithMetadata {
+        moves: [(Move::null(), None); 218],
+        length: 0,
+        check: false,
+    };
 
     // King moves are restricted by the danger mask
     let king_index = king_mask.trailing_zeros() as u8;
@@ -38,7 +88,8 @@ pub fn legal_moves_with_metadata(board: &Board) -> (Vec<(Move, Option<u8>)>, boo
 
     // If in double check, only legal moves are non-castling king moves
     if checkers > 1 {
-        return (moves, true);
+        moves.check = true;
+        return moves;
     }
 
     // Mask of what enemy pieces can attack the king
@@ -371,7 +422,8 @@ pub fn legal_moves_with_metadata(board: &Board) -> (Vec<(Move, Option<u8>)>, boo
         }
     }
 
-    (moves, checkers > 0)
+    moves.check = checkers > 0;
+    moves
 }
 
 fn king_danger_mask(
@@ -465,29 +517,29 @@ mod tests {
     fn test_bishop_pin() {
         let board = Board::from_fen("7b/8/8/8/8/8/1B6/K7 w - - 0 1");
         let moves = legal_moves(&board);
-        assert_eq!(moves.len(), 8);
+        assert_eq!(moves.length, 8);
         let board = Board::from_fen("8/8/8/8/8/8/KB5r/8 w - - 0 1");
         let moves = legal_moves(&board);
-        assert_eq!(moves.len(), 4);
+        assert_eq!(moves.length, 4);
         let board = Board::from_fen("8/8/8/8/8/8/KB2b2r/8 w - - 0 1");
         let moves = legal_moves(&board);
-        assert_eq!(moves.len(), 13);
+        assert_eq!(moves.length, 13);
         let board = Board::from_fen("8/8/8/5k2/8/8/KB2B2r/8 w - - 0 1");
         let moves = legal_moves(&board);
-        assert_eq!(moves.len(), 22);
+        assert_eq!(moves.length, 22);
     }
 
     #[test]
     fn test_pawn_pin() {
         let board = Board::from_fen("8/8/8/8/8/8/K1P1r3/8 w - - 0 1");
         let moves = legal_moves(&board);
-        assert_eq!(moves.len(), 5);
+        assert_eq!(moves.length, 5);
         let board = Board::from_fen("8/8/8/8/8/K3r3/2P5/8 w - - 0 1");
         let moves = legal_moves(&board);
-        assert_eq!(moves.len(), 5);
+        assert_eq!(moves.length, 5);
         let board = Board::from_fen("7k/8/7r/K3pP1r/7r/8/8/8 w - - 0 2");
         let moves = legal_moves(&board);
-        assert_eq!(moves.len(), 2);
+        assert_eq!(moves.length, 2);
     }
 
     #[test]
@@ -678,15 +730,16 @@ mod tests {
         transposition_tables: &mut Vec<Vec<(u64, usize)>>,
         divide: bool,
     ) -> usize {
-        let moves = legal_moves(board);
-        if moves.is_empty() {
+        let moves = legal_moves_with_metadata(board);
+        if moves.length == 0 {
             return 0;
         }
         if depth == 1 {
-            return moves.len();
+            return moves.length;
         }
         let mut total_moves = 0;
-        for mov in moves {
+        for i in 0..moves.length {
+            let mov = &moves.moves[i].0;
             let metadata = board.make_move(&mov);
             let table_key = board.zobrist_hash as usize % TABLE_SIZE;
             let (entry_hash, entry_nodes) = transposition_tables[depth - 1][table_key];

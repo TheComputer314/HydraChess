@@ -1,5 +1,5 @@
 use crate::move_generation;
-use crate::move_generation::Board;
+use crate::move_generation::{Board, Moves, MovesWithMetadata};
 use crate::move_generation::mov::Move;
 use crate::move_generation::mov::piece_type::PAWN;
 use crate::search_threads::evaluation;
@@ -30,14 +30,14 @@ impl Search {
     ) -> Move {
         self.nodes_searched = 0;
         let legal_moves = move_generation::legal_moves(board);
-        if legal_moves.is_empty() {
+        if legal_moves.length == 0 {
             panic!(
                 "Attempted to search_threads and eval board {} when we're checkmated",
                 board
             );
         }
-        if legal_moves.len() == 1 {
-            return legal_moves[0];
+        if legal_moves.length == 1 {
+            return legal_moves.moves[0];
         }
 
         let color = if board.white_to_move() { 1 } else { -1 };
@@ -167,9 +167,9 @@ impl Search {
             return alpha;
         }
 
-        let (moves, check) = move_generation::legal_moves_with_metadata(board);
-        if moves.is_empty() {
-            return if check {
+        let moves = move_generation::legal_moves_with_metadata(board);
+        if moves.length == 0 {
+            return if moves.check {
                 search_ply - Self::IMMEDIATE_MATE_SCORE // Checkmate
             } else {
                 0 // Draw by no legal moves
@@ -196,7 +196,7 @@ impl Search {
         if depth == 0 {
             return self.quiescence(
                 board,
-                (moves, check),
+                moves,
                 alpha,
                 beta,
                 search_ply + 1,
@@ -206,7 +206,7 @@ impl Search {
             );
         }
 
-        let moves = moves.into_iter().map(|mov| mov.0).collect();
+        let moves = moves.strip_metadata();
         let mut sorted_moves = self.sort_moves(board, &moves, tt_move, color);
 
         let mut best_move = sorted_moves[0];
@@ -250,7 +250,7 @@ impl Search {
     fn quiescence<F>(
         &mut self,
         board: &mut Board,
-        moves: (Vec<(Move, Option<u8>)>, bool),
+        moves: MovesWithMetadata,
         alpha: i32,
         beta: i32,
         search_ply: i32,
@@ -271,15 +271,12 @@ impl Search {
 
         self.count_nodes(nodes_searched);
 
-        let (mut moves, check) = moves;
-        if moves.is_empty() {
-            return if check {
+        if moves.length == 0 {
+            return if moves.check {
                 search_ply - Self::IMMEDIATE_MATE_SCORE // Checkmate
             } else {
                 0 // Draw by no legal moves
             };
-        } else {
-            moves.retain(|mov| mov.1.is_some());
         }
 
         let mut alpha = alpha;
@@ -292,7 +289,7 @@ impl Search {
             alpha = static_eval;
         }
 
-        let moves = moves.into_iter().map(|mov| mov.0).collect();
+        let moves = moves.filter_captures();
         let moves = self.sort_moves(board, &moves, None, color);
 
         for mov in moves {
@@ -330,12 +327,13 @@ impl Search {
     fn sort_moves(
         &self,
         board: &mut Board,
-        moves: &Vec<Move>,
+        moves: &Moves,
         tt_move: Option<Move>,
         color: i32,
     ) -> Vec<Move> {
-        let mut sorted_moves: Vec<(&Move, i32)> = Vec::with_capacity(moves.len());
-        for mov in moves {
+        let mut sorted_moves: Vec<(&Move, i32)> = Vec::with_capacity(moves.length);
+        for i in 0..moves.length {
+            let mov = &moves.moves[i];
             let value;
             if let Some(tt_move) = tt_move
                 && &tt_move == mov
