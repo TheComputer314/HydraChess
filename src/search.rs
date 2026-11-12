@@ -120,7 +120,7 @@ impl SearchThreads {
         *self.shared_state.root_board.lock().unwrap() = Board::starting();
         Arc::get_mut(&mut self.shared_state)
             .unwrap()
-            .transposition_table = TranspositionTable::new(20);
+            .transposition_table.clear(); 
         self.moves_played = 0;
     }
 

@@ -91,6 +91,13 @@ impl TranspositionTable {
             .store(zobrist_key ^ data, Ordering::Relaxed);
         entry.data.store(data, Ordering::Relaxed);
     }
+
+    pub fn clear(&self) {
+        for entry in &self.table {
+            entry.zobrist_key_xor_data.store(0, Ordering::Relaxed);
+            entry.data.store(0, Ordering::Relaxed);
+        }
+    }
 }
 
 #[cfg(test)]
