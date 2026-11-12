@@ -19,8 +19,8 @@ use std::thread::JoinHandle;
 
 struct SearchResult {
     // TODO
-    // depth: usize,
-    // score: i32,
+    depth: usize,
+    score: i32,
     best_move: Move,
     // pv: Vec<Move>,
 }
@@ -43,7 +43,6 @@ pub struct Signals {
 
 pub struct SearchThreads {
     shared_state: Arc<SharedState>,
-    handles: Vec<JoinHandle<()>>,
     moves_played: u32,
 }
 
@@ -54,6 +53,15 @@ impl SearchThreads {
         // Coordinator thread is +1
         let total_threads = SEARCH_THREADS + 1;
 
+        let mut results = Vec::with_capacity(SEARCH_THREADS);
+        for _ in 0..SEARCH_THREADS {
+            results.push(Mutex::new(SearchResult {
+                depth: 0,
+                score: 0,
+                best_move: Move::null(),
+            }));
+        }
+
         let shared_state = Arc::new(SharedState {
             time_left: AtomicU64::new(0),
             increment: AtomicU64::new(0),
@@ -61,16 +69,14 @@ impl SearchThreads {
             end_barrier: Barrier::new(total_threads),
             root_board: Mutex::new(Board::starting()),
             transposition_table: TranspositionTable::new(20),
-            results: Vec::with_capacity(SEARCH_THREADS),
+            results,
         });
-
-        let mut handles = Vec::with_capacity(SEARCH_THREADS);
 
         for i in 0..SEARCH_THREADS {
             let state = Arc::clone(&shared_state);
             let stop_signal = Arc::clone(&signals.stop_signal);
             let quit_signal = Arc::clone(&signals.quit_signal);
-            handles.push(thread::spawn(move || {
+            thread::spawn(move || {
                 let search = Search {};
                 loop {
                     state.start_barrier.wait();
@@ -93,12 +99,11 @@ impl SearchThreads {
                     }
                     state.end_barrier.wait();
                 }
-            }));
+            });
         }
 
         Self {
             shared_state,
-            handles,
             moves_played: 0,
         }
     }
@@ -155,8 +160,21 @@ impl SearchThreads {
             } else {
                 (black_time_left_ms, black_increment)
             };
+        println!("Starting search");
         self.shared_state.time_left.store(time_left_ms, Relaxed);
         self.shared_state.increment.store(increment, Relaxed);
+        self.shared_state.start_barrier.wait();
+        self.shared_state.end_barrier.wait();
+
+        let best_result = self
+            .shared_state
+            .results
+            .iter()
+            .map(|m| m.lock().unwrap())
+            .max_by_key(|r| (r.depth, r.score))
+            .unwrap()
+            .best_move;
+        println!("bestmove {}", best_result);
     }
 }
 
