@@ -1,46 +1,116 @@
 mod evaluation;
 mod transposition_table;
 
-use super::move_generation::{Board, MoveGenerator};
+use super::move_generation;
+use super::move_generation::Board;
 use crate::move_generation::mov::Move;
 use crate::move_generation::mov::piece_type::PAWN;
-use crate::search::evaluation::Evaluation;
 use crate::search::transposition_table::{EntryResult, TranspositionTable};
 use minstant::Instant;
 use std::cmp::Reverse;
 use std::io::stdout;
 use std::io::{Stdout, Write};
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::Mutex;
 use std::sync::atomic::Ordering::Relaxed;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Barrier};
+use std::thread;
+use std::thread::JoinHandle;
 
-pub struct SearchThread {
-    search: Search,
+struct SearchResult {
+    depth: usize,
+    score: i64,
+    best_move: Move,
+    pv: Vec<Move>,
 }
 
-impl SearchThread {
+struct SharedState {
+    stop_signal: AtomicBool,
+    quit_signal: AtomicBool,
+    start_barrier: Barrier,
+    end_barrier: Barrier,
+    root_board: Mutex<Board>,
+    // Transposition table is lock-free to allow TT improvements in one thread to improve search in another
+    transposition_table: TranspositionTable,
+    results: Vec<SearchResult>,
+}
+
+pub struct SearchThreads {
+    shared_state: Arc<SharedState>,
+    handles: Vec<JoinHandle<()>>,
+    moves_played: u32,
+}
+
+const SEARCH_THREADS: usize = 4;
+
+impl SearchThreads {
     pub fn new() -> Self {
+        // Coordinator thread is +1
+        let total_threads = SEARCH_THREADS + 1;
+
+        let shared_state = Arc::new(SharedState {
+            stop_signal: AtomicBool::new(false),
+            quit_signal: AtomicBool::new(false),
+            start_barrier: Barrier::new(total_threads),
+            end_barrier: Barrier::new(total_threads),
+            root_board: Mutex::new(Board::starting()),
+            transposition_table: TranspositionTable::new(20),
+            results: Vec::with_capacity(SEARCH_THREADS),
+        });
+
+        let mut handles = Vec::with_capacity(SEARCH_THREADS);
+
+        for i in 0..SEARCH_THREADS {
+            let state = Arc::clone(&shared_state);
+            handles.push(thread::spawn(move || {
+                let search = Search::new();
+                loop {
+                    state.start_barrier.wait();
+                    if state.quit_signal.load(Ordering::Acquire) {
+                        break;
+                    }
+                    let mut board = state.root_board.lock().unwrap().clone();
+
+                    let search = search.search(
+                        &mut board,
+                        &mut state.transposition_table, // TODO: Make the TT atomic
+                        &state.stop_signal,
+                        10000,
+                        0,
+                    );
+
+                    state.end_barrier.wait();
+                }
+            }));
+        }
+
         Self {
-            search: Search::new(),
+            shared_state,
+            handles,
+            moves_played: 0,
         }
     }
 
     pub fn new_game(&mut self) {
-        self.search = Search::new();
+        *self.shared_state.root_board.lock().unwrap() = Board::starting();
+        Arc::get_mut(&mut self.shared_state)
+            .unwrap()
+            .transposition_table = TranspositionTable::new(20);
+        self.moves_played = 0;
     }
 
     pub fn position(&mut self, string: &str) {
         let parts: Vec<&str> = string.split_whitespace().collect();
 
         if parts[0] == "startpos" {
-            self.search.board = Board::starting();
-            self.search.moves_played = 0;
+            *self.shared_state.root_board.lock().unwrap() = Board::starting();
+            self.moves_played = 0;
             if parts.len() > 1 && parts[1] == "moves" {
                 self.position_moves(&parts[2..]);
             }
         } else if parts[0] == "fen" {
-            self.search.board = Board::from_fen(&parts[1..7].join(" "));
-            self.search.moves_played = 0;
+            *self.shared_state.root_board.lock().unwrap() = Board::from_fen(&parts[1..7].join(" "));
+            self.moves_played = 0;
             if parts.len() > 7 && parts[7] == "moves" {
                 self.position_moves(&parts[8..]);
             }
@@ -48,15 +118,16 @@ impl SearchThread {
     }
 
     fn position_moves(&mut self, moves: &[&str]) {
+        let mut board = self.shared_state.root_board.lock().unwrap();
         for mov in moves {
-            self.search.board.move_from_uci_lan(mov);
-            self.search.moves_played += 1;
+            board.move_from_uci_lan(mov);
+            self.moves_played += 1;
         }
     }
 
     pub fn debug(&self) {
-        println!("Board: {}", self.search.board);
-        println!("Moves played: {}", self.search.moves_played);
+        println!("Board: {}", self.shared_state.root_board.lock().unwrap());
+        println!("Moves played: {}", self.moves_played);
     }
 
     pub fn go(
@@ -67,68 +138,50 @@ impl SearchThread {
         black_time_left_ms: u128,
         black_increment: u128,
     ) {
-        let out = stdout();
-
-        let (time_left_ms, increment) = if self.search.board.white_to_move() {
+        let (time_left_ms, increment) = if true {
             (white_time_left_ms, white_increment)
         } else {
             (black_time_left_ms, black_increment)
         };
-        let best_move = self
-            .search
-            .search(stop_signal, &out, time_left_ms, increment);
-        self.search.board.make_move(&best_move);
-        let mut out = stdout().lock();
-        writeln!(out, "bestmove {}", best_move).unwrap();
-        out.flush().unwrap();
-        self.search.moves_played += 1;
+        todo!()
     }
 }
 
 struct Search {
-    board: Board,
-    move_generator: MoveGenerator,
-    transposition_table: TranspositionTable,
-    moves_played: usize,
     nodes_searched: u64,
 }
 
 impl Search {
     pub fn new() -> Self {
-        Self {
-            board: Board::starting(),
-            move_generator: MoveGenerator::new(),
-            transposition_table: TranspositionTable::new(20),
-            moves_played: 0,
-            nodes_searched: 0,
-        }
+        Self { nodes_searched: 0 }
     }
 
     fn search(
         &mut self,
-        stop_signal: &Arc<AtomicBool>,
-        out: &Stdout,
+        board: &mut Board,
+        transposition_table: &mut TranspositionTable,
+        stop_signal: &AtomicBool,
         time_left_ms: u128,
         increment: u128,
     ) -> Move {
-        let legal_moves = self.move_generator.legal_moves(&self.board);
+        let legal_moves = move_generation::legal_moves(board);
         if legal_moves.is_empty() {
             panic!(
                 "Attempted to search and eval board {} when we're checkmated",
-                self.board
+                board
             );
         }
         if legal_moves.len() == 1 {
             return legal_moves[0];
         }
 
-        let color = if self.board.white_to_move() { 1 } else { -1 };
-        let transposition_table_result = self.transposition_table.get(self.board.zobrist_hash);
+        let color = if board.white_to_move() { 1 } else { -1 };
+        let transposition_table_result = transposition_table.get(board.zobrist_hash);
         let mut tt_move = None;
         if let Some(result) = transposition_table_result {
             tt_move = Some(result.best_move);
         }
-        let legal_moves = self.sort_moves(&legal_moves, tt_move, color);
+        let legal_moves = self.sort_moves(board, &legal_moves, tt_move, color);
 
         let mut best_move = &legal_moves[0];
         let max_depth = 16;
@@ -144,10 +197,19 @@ impl Search {
             let mut depth_best_score = -i64::MAX;
             let mut depth_best_move = best_move;
             for mov in &legal_moves {
-                let metadata = self.board.make_move(mov);
+                let metadata = board.make_move(mov);
 
-                let eval = -self.negamax(depth, 1, -i64::MAX, i64::MAX, -color, &time_ok);
-                self.board.unmake_move(mov, metadata);
+                let eval = -self.negamax(
+                    board,
+                    transposition_table,
+                    depth,
+                    1,
+                    -i64::MAX,
+                    i64::MAX,
+                    -color,
+                    &time_ok,
+                );
+                board.unmake_move(mov, metadata);
                 if eval > depth_best_score {
                     depth_best_score = eval;
                     depth_best_move = mov;
@@ -158,31 +220,6 @@ impl Search {
                 }
             }
             best_move = depth_best_move;
-
-            let mut lock = out.lock();
-            if self.is_mate_score(depth_best_score) {
-                let mate_in_ply = Self::IMMEDIATE_MATE_SCORE - depth_best_score.abs();
-                writeln!(
-                    lock,
-                    "info depth {} score mate {} nodes {} nps {}",
-                    depth + 1,
-                    ((mate_in_ply + 1) / 2) * depth_best_score.signum(),
-                    self.nodes_searched,
-                    self.nodes_searched as f64 / timer.elapsed().as_secs_f64()
-                )
-                    .unwrap();
-            } else {
-                writeln!(
-                    lock,
-                    "info depth {} score cp {} nodes {} nps {}",
-                    depth + 1,
-                    depth_best_score * color,
-                    self.nodes_searched,
-                    self.nodes_searched as f64 / timer.elapsed().as_secs_f64()
-                )
-                .unwrap();
-            }
-            lock.flush().unwrap();
         }
 
         *best_move
@@ -196,6 +233,8 @@ impl Search {
 
     fn negamax<F>(
         &mut self,
+        board: &mut Board,
+        transposition_table: &mut TranspositionTable,
         depth: u16,
         search_ply: i64,
         alpha: i64,
@@ -207,7 +246,7 @@ impl Search {
         F: Fn() -> bool,
     {
         self.nodes_searched += 1;
-        if self.board.get_halfmove_clock() > 100 || self.board.times_played() >= 3 {
+        if board.get_halfmove_clock() > 100 || board.times_played() >= 3 {
             return 0;
         }
         let mut evaluation_type = 1;
@@ -221,7 +260,7 @@ impl Search {
             return alpha;
         }
 
-        let (moves, check) = self.move_generator.legal_moves_with_metadata(&self.board);
+        let (moves, check) = move_generation::legal_moves_with_metadata(board);
         if moves.is_empty() {
             return if check {
                 search_ply - Self::IMMEDIATE_MATE_SCORE // Checkmate
@@ -230,7 +269,7 @@ impl Search {
             };
         }
 
-        let tt_result = self.transposition_table.get(self.board.zobrist_hash);
+        let tt_result = transposition_table.get(board.zobrist_hash);
         let mut tt_move = None;
         if let Some(tt_result) = tt_result {
             tt_move = Some(tt_result.best_move);
@@ -248,20 +287,37 @@ impl Search {
         }
 
         if depth == 0 {
-            return self.quiescence((moves, check), alpha, beta, search_ply + 1, color, time_ok);
+            return self.quiescence(
+                board,
+                (moves, check),
+                alpha,
+                beta,
+                search_ply + 1,
+                color,
+                time_ok,
+            );
         }
 
         let moves = moves.into_iter().map(|mov| mov.0).collect();
-        let sorted_moves = self.sort_moves(&moves, tt_move, color);
+        let sorted_moves = self.sort_moves(board, &moves, tt_move, color);
 
         let mut best_move = sorted_moves[0];
         for mov in sorted_moves {
             if !time_ok() {
                 return alpha;
             }
-            let metadata = self.board.make_move(&mov);
-            let value = -self.negamax(depth - 1, search_ply + 1, -beta, -alpha, -color, time_ok);
-            self.board.unmake_move(&mov, metadata);
+            let metadata = board.make_move(&mov);
+            let value = -self.negamax(
+                board,
+                transposition_table,
+                depth - 1,
+                search_ply + 1,
+                -beta,
+                -alpha,
+                -color,
+                time_ok,
+            );
+            board.unmake_move(&mov, metadata);
             if value > alpha {
                 alpha = value;
                 evaluation_type = 0;
@@ -274,8 +330,8 @@ impl Search {
             }
         }
 
-        self.transposition_table.insert(
-            self.board.zobrist_hash,
+        transposition_table.insert(
+            board.zobrist_hash,
             EntryResult::new(depth, alpha, evaluation_type, best_move),
         );
         alpha
@@ -283,6 +339,7 @@ impl Search {
 
     fn quiescence<F>(
         &mut self,
+        board: &mut Board,
         moves: (Vec<(Move, Option<u8>)>, bool),
         alpha: i64,
         beta: i64,
@@ -297,7 +354,7 @@ impl Search {
             return 0;
         }
 
-        if self.board.get_halfmove_clock() > 100 || self.board.times_played() >= 3 {
+        if board.get_halfmove_clock() > 100 || board.times_played() >= 3 {
             return 0;
         }
 
@@ -314,7 +371,7 @@ impl Search {
 
         let mut alpha = alpha;
 
-        let static_eval = Evaluation::evaluate(&self.board) * color;
+        let static_eval = evaluation::evaluate(board) * color;
         if static_eval >= beta {
             return beta;
         }
@@ -323,31 +380,28 @@ impl Search {
         }
 
         let moves = moves.into_iter().map(|mov| mov.0).collect();
-        let moves = self.sort_moves(&moves, None, color);
+        let moves = self.sort_moves(board, &moves, None, color);
 
         for mov in moves {
             if !time_ok() {
                 return alpha;
             }
-            let see = Evaluation::static_exchange_evaluation(
-                &self.board,
-                &mov,
-                &self.move_generator.lookup,
-            );
+            let see = evaluation::static_exchange_evaluation(board, &mov);
             if see < 0 {
                 continue;
             }
 
-            let metadata = self.board.make_move(&mov);
+            let metadata = board.make_move(&mov);
             let eval = -self.quiescence(
-                self.move_generator.legal_moves_with_metadata(&self.board),
+                board,
+                move_generation::legal_moves_with_metadata(board),
                 -beta,
                 -alpha,
                 search_ply + 1,
                 -color,
                 time_ok,
             );
-            self.board.unmake_move(&mov, metadata);
+            board.unmake_move(&mov, metadata);
             if eval >= beta {
                 return beta;
             }
@@ -359,7 +413,13 @@ impl Search {
         alpha
     }
 
-    fn sort_moves(&mut self, moves: &Vec<Move>, tt_move: Option<Move>, color: i64) -> Vec<Move> {
+    fn sort_moves(
+        &self,
+        board: &mut Board,
+        moves: &Vec<Move>,
+        tt_move: Option<Move>,
+        color: i64,
+    ) -> Vec<Move> {
         let mut sorted_moves: Vec<(&Move, i64)> = Vec::with_capacity(moves.len());
         for mov in moves {
             let value;
@@ -371,30 +431,24 @@ impl Search {
                 let capture_type = if mov.flags() == 0b0001 {
                     Some(PAWN)
                 } else {
-                    self.board.get_piece_at_square(mov.ending_index())
+                    board.get_piece_at_square(mov.ending_index())
                 };
 
                 value = if let Some(capture_type) = capture_type {
-                    let eval = Evaluation::static_exchange_evaluation(
-                        &self.board,
-                        mov,
-                        &self.move_generator.lookup,
-                    );
+                    let eval = evaluation::static_exchange_evaluation(board, mov);
                     if eval != 0 {
                         eval + (100_000 * eval.signum())
                     } else {
                         20_000
-                            + Evaluation::mvv_lva(
-                                self.board
-                                    .get_piece_at_square(mov.starting_index())
-                                    .unwrap() as usize,
+                            + evaluation::mvv_lva(
+                                board.get_piece_at_square(mov.starting_index()).unwrap() as usize,
                                 capture_type as usize,
                             )
                     }
                 } else {
-                    let metadata = self.board.make_move(mov);
-                    let eval = Evaluation::evaluate(&self.board) * color;
-                    self.board.unmake_move(mov, metadata);
+                    let metadata = board.make_move(mov);
+                    let eval = evaluation::evaluate(board) * color;
+                    board.unmake_move(mov, metadata);
                     eval
                 };
             }

@@ -1,21 +1,20 @@
 mod move_generation;
 mod search;
 
-use crate::search::SearchThread;
+use crate::search::SearchThreads;
 use std::io::{self, BufRead, Write};
-use std::process;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, channel};
+use std::{process, thread};
 
-#[tokio::main(flavor = "multi_thread")]
-async fn main() {
+fn main() {
     if cfg!(not(debug_assertions)) {
         std::panic::set_hook(Box::new(|panic_info| {
             eprintln!("Critical engine panic: {panic_info}");
 
             // Immediate termination of the entire engine process
-            // Prevents Tokio from catching the panic, we want a fast exit
+            // We want a fast exit instead of unwinding through the engine.
             process::exit(1);
         }));
     }
@@ -28,7 +27,7 @@ async fn main() {
     let stop_signal = Arc::new(AtomicBool::new(false));
 
     let stop_signal_clone = stop_signal.clone();
-    let search_thread_handle = tokio::spawn(async move { search_loop(cmd_rx, stop_signal_clone) });
+    let search_thread_handle = thread::spawn(move || search_loop(cmd_rx, stop_signal_clone));
 
     // UCI main loop: read commands from stdin line by line.
     while let Some(Ok(line)) = stdin_lines.next() {
@@ -121,7 +120,7 @@ async fn main() {
             "quit" => {
                 stop_signal.store(true, Ordering::Relaxed);
                 cmd_tx.send(EngineCommand::Quit).unwrap();
-                search_thread_handle.await.unwrap();
+                search_thread_handle.join().unwrap();
                 break;
             }
             _ => {
@@ -147,7 +146,7 @@ enum EngineCommand {
 }
 
 fn search_loop(cmd_rx: Receiver<EngineCommand>, stop_signal: Arc<AtomicBool>) {
-    let mut search = SearchThread::new();
+    let mut search = SearchThreads::new();
     while let Ok(cmd) = cmd_rx.recv() {
         match cmd {
             EngineCommand::NewGame => {

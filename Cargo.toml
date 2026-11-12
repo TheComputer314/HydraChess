@@ -11,5 +11,4 @@ edition = "2024"
 
 [dependencies]
 rand = "0.10.3"
-tokio = { version = "1.54.1", features = ["rt", "rt-multi-thread", "macros"] }
 minstant = "0.1.7"
