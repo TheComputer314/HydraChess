@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, channel};
 use std::{process, thread};
+use std::sync::atomic::Ordering::Relaxed;
 
 fn main() {
     if cfg!(not(debug_assertions)) {
@@ -70,6 +71,7 @@ fn main() {
                 cmd_tx.send(EngineCommand::Position { position }).unwrap();
             }
             "go" => {
+                stop_signal.store(false, Relaxed);
                 let (white_time_left_ms, white_increment, black_time_left_ms, black_increment) =
                     if parts.len() < 2 || parts[1] == "infinite" {
                         (u64::MAX, 0, u64::MAX, 0)
