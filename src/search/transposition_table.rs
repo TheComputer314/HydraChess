@@ -65,8 +65,9 @@ impl TranspositionTable {
     pub fn get(&self, zobrist_key: u64) -> Option<EntryResult> {
         let index = zobrist_key as usize % self.size;
         let entry = &self.table[index];
-        let data = entry.data.load(Ordering::Relaxed);
-        if entry.zobrist_key_xor_data.load(Ordering::Relaxed) == zobrist_key ^ data {
+        let key_xor_data = entry.zobrist_key_xor_data.load(Ordering::Acquire);
+        let data = entry.data.load(Ordering::Acquire);
+        if key_xor_data == zobrist_key ^ data {
             Some(EntryResult::from_u64(data))
         } else {
             None
@@ -86,10 +87,10 @@ impl TranspositionTable {
             return;
         }
 
+        entry.data.store(data, Ordering::Release);
         entry
             .zobrist_key_xor_data
-            .store(zobrist_key ^ data, Ordering::Relaxed);
-        entry.data.store(data, Ordering::Relaxed);
+            .store(zobrist_key ^ data, Ordering::Release);
     }
 
     pub fn clear(&self) {
