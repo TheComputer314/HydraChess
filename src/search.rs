@@ -19,7 +19,7 @@ use std::thread::JoinHandle;
 
 struct SearchResult {
     depth: usize,
-    score: i64,
+    score: i32,
     best_move: Move,
     pv: Vec<Move>,
 }
@@ -63,7 +63,7 @@ impl SearchThreads {
         for i in 0..SEARCH_THREADS {
             let state = Arc::clone(&shared_state);
             handles.push(thread::spawn(move || {
-                let search = Search::new();
+                let search = Search {};
                 loop {
                     state.start_barrier.wait();
                     if state.quit_signal.load(Ordering::Acquire) {
@@ -73,11 +73,13 @@ impl SearchThreads {
 
                     let search = search.search(
                         &mut board,
-                        &mut state.transposition_table, // TODO: Make the TT atomic
+                        &state.transposition_table,
                         &state.stop_signal,
                         10000,
                         0,
                     );
+
+
 
                     state.end_barrier.wait();
                 }
@@ -147,19 +149,13 @@ impl SearchThreads {
     }
 }
 
-struct Search {
-    nodes_searched: u64,
-}
+struct Search {}
 
 impl Search {
-    pub fn new() -> Self {
-        Self { nodes_searched: 0 }
-    }
-
     fn search(
-        &mut self,
+        &self,
         board: &mut Board,
-        transposition_table: &mut TranspositionTable,
+        transposition_table: &TranspositionTable,
         stop_signal: &AtomicBool,
         time_left_ms: u128,
         increment: u128,
@@ -185,7 +181,6 @@ impl Search {
 
         let mut best_move = &legal_moves[0];
         let max_depth = 16;
-        self.nodes_searched = 0;
         let timer = Instant::now();
         let time_ok = || {
             let elapsed = timer.elapsed().as_millis();
@@ -194,7 +189,7 @@ impl Search {
                 && elapsed < 10000
         };
         'iterative_deepening: for depth in 0..max_depth {
-            let mut depth_best_score = -i64::MAX;
+            let mut depth_best_score = -i32::MAX;
             let mut depth_best_move = best_move;
             for mov in &legal_moves {
                 let metadata = board.make_move(mov);
@@ -204,8 +199,8 @@ impl Search {
                     transposition_table,
                     depth,
                     1,
-                    -i64::MAX,
-                    i64::MAX,
+                    -i32::MAX,
+                    i32::MAX,
                     -color,
                     &time_ok,
                 );
@@ -225,27 +220,26 @@ impl Search {
         *best_move
     }
 
-    const IMMEDIATE_MATE_SCORE: i64 = i64::MAX / 2;
+    const IMMEDIATE_MATE_SCORE: i32 = i32::MAX / 2;
 
-    fn is_mate_score(&self, score: i64) -> bool {
+    fn is_mate_score(&self, score: i32) -> bool {
         score.abs() > Self::IMMEDIATE_MATE_SCORE - 100000
     }
 
     fn negamax<F>(
-        &mut self,
+        &self,
         board: &mut Board,
-        transposition_table: &mut TranspositionTable,
-        depth: u16,
-        search_ply: i64,
-        alpha: i64,
-        beta: i64,
-        color: i64,
+        transposition_table: &TranspositionTable,
+        depth: u8,
+        search_ply: i32,
+        alpha: i32,
+        beta: i32,
+        color: i32,
         time_ok: &F,
-    ) -> i64
+    ) -> i32
     where
         F: Fn() -> bool,
     {
-        self.nodes_searched += 1;
         if board.get_halfmove_clock() > 100 || board.times_played() >= 3 {
             return 0;
         }
@@ -338,15 +332,15 @@ impl Search {
     }
 
     fn quiescence<F>(
-        &mut self,
+        &self,
         board: &mut Board,
         moves: (Vec<(Move, Option<u8>)>, bool),
-        alpha: i64,
-        beta: i64,
-        search_ply: i64,
-        color: i64,
+        alpha: i32,
+        beta: i32,
+        search_ply: i32,
+        color: i32,
         time_ok: &F,
-    ) -> i64
+    ) -> i32
     where
         F: Fn() -> bool,
     {
@@ -418,15 +412,15 @@ impl Search {
         board: &mut Board,
         moves: &Vec<Move>,
         tt_move: Option<Move>,
-        color: i64,
+        color: i32,
     ) -> Vec<Move> {
-        let mut sorted_moves: Vec<(&Move, i64)> = Vec::with_capacity(moves.len());
+        let mut sorted_moves: Vec<(&Move, i32)> = Vec::with_capacity(moves.len());
         for mov in moves {
             let value;
             if let Some(tt_move) = tt_move
                 && &tt_move == mov
             {
-                value = 1 << 12;
+                value = 1 << 20;
             } else {
                 let capture_type = if mov.flags() == 0b0001 {
                     Some(PAWN)

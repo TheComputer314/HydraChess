@@ -16,9 +16,9 @@ use std::fmt::Formatter;
 ///   - 0b0101: Rook promotion
 ///   - 0b0110: Bishop promotion
 ///   - 0b0111: Knight promotion
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Move {
-    data: u16,
+    pub data: u16,
 }
 
 impl fmt::Display for Move {

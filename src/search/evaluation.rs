@@ -23,10 +23,10 @@ macro_rules! piece_square_table {
     };
 }
 
-const OPENING_PIECE_VALUES: [i64; 6] = [82, 337, 365, 477, 1025, 0];
-const ENDGAME_PIECE_VALUES: [i64; 6] = [94, 281, 297, 512, 936, 0];
+const OPENING_PIECE_VALUES: [i32; 6] = [82, 337, 365, 477, 1025, 0];
+const ENDGAME_PIECE_VALUES: [i32; 6] = [94, 281, 297, 512, 936, 0];
 
-const OPENING_SQUARE_VALUES: [[i64; 64]; 6] = [
+const OPENING_SQUARE_VALUES: [[i32; 64]; 6] = [
     piece_square_table!(
           0,   0,   0,   0,   0,   0,  0,   0;
          98, 134,  61,  95,  68, 126, 34, -11;
@@ -89,7 +89,7 @@ const OPENING_SQUARE_VALUES: [[i64; 64]; 6] = [
     ),
 ];
 
-const ENDGAME_SQUARE_VALUES: [[i64; 64]; 6] = [
+const ENDGAME_SQUARE_VALUES: [[i32; 64]; 6] = [
     piece_square_table!(
         0,   0,   0,   0,   0,   0,   0,   0;
       178, 173, 158, 134, 147, 132, 165, 187;
@@ -152,7 +152,7 @@ const ENDGAME_SQUARE_VALUES: [[i64; 64]; 6] = [
     ),
 ];
 
-pub(crate) fn evaluate(board: &Board) -> i64 {
+pub(crate) fn evaluate(board: &Board) -> i32 {
     let mut score = 0;
     let pieces_left = board.white.count_ones() + board.black.count_ones();
     for square in 0..64 {
@@ -189,7 +189,7 @@ pub(crate) fn evaluate(board: &Board) -> i64 {
     score
 }
 
-fn get_value(piece_type: usize, square: usize, pieces_left: u32) -> i64 {
+fn get_value(piece_type: usize, square: usize, pieces_left: u32) -> i32 {
     lerp_value(
         OPENING_PIECE_VALUES[piece_type] + OPENING_SQUARE_VALUES[piece_type][square],
         ENDGAME_PIECE_VALUES[piece_type] + ENDGAME_SQUARE_VALUES[piece_type][square],
@@ -197,21 +197,21 @@ fn get_value(piece_type: usize, square: usize, pieces_left: u32) -> i64 {
     )
 }
 
-fn lerp_value(opening: i64, endgame: i64, pieces_left: u32) -> i64 {
+fn lerp_value(opening: i32, endgame: i32, pieces_left: u32) -> i32 {
     let a = opening;
     let b = endgame;
     // Remove kings from count
-    let t = pieces_left as i64 - 2;
+    let t = pieces_left as i32 - 2;
     (a * (30 - t) + b * t) / 30
 }
 
-const PIECE_VALUES: [i64; 6] = [100, 220, 430, 600, 1000, 20_000];
+const PIECE_VALUES: [i32; 6] = [100, 220, 430, 600, 1000, 20_000];
 
-pub fn mvv_lva(attacker: usize, victim: usize) -> i64 {
+pub fn mvv_lva(attacker: usize, victim: usize) -> i32 {
     PIECE_VALUES[victim] * 10 - PIECE_VALUES[attacker]
 }
 
-pub fn static_exchange_evaluation(board: &Board, mov: &Move) -> i64 {
+pub fn static_exchange_evaluation(board: &Board, mov: &Move) -> i32 {
     let mut gain = [0; 32];
     let mut depth = 0;
 
@@ -363,7 +363,7 @@ mod tests {
     use crate::move_generation::mov::Move;
     use crate::search::evaluation::static_exchange_evaluation;
 
-    fn see(fen: &str, starting_square: u8, ending_square: u8) -> i64 {
+    fn see(fen: &str, starting_square: u8, ending_square: u8) -> i32 {
         let board = Board::from_fen(fen);
         static_exchange_evaluation(&board, &Move::regular(starting_square, ending_square))
     }
