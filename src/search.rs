@@ -72,7 +72,7 @@ impl SearchThreads {
             start_barrier: Barrier::new(total_threads),
             end_barrier: Barrier::new(total_threads),
             root_board: Mutex::new(Board::starting()),
-            transposition_table: TranspositionTable::new(20),
+            transposition_table: TranspositionTable::new(40),
             results,
             nodes_searched: AtomicU64::new(0),
         });
