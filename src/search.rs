@@ -7,6 +7,7 @@ use crate::move_generation::mov::Move;
 use crate::move_generation::mov::piece_type::PAWN;
 use crate::search::transposition_table::{EntryResult, TranspositionTable};
 use minstant::Instant;
+use rand::seq::SliceRandom;
 use std::cmp::Reverse;
 use std::io::stdout;
 use std::io::{Stdout, Write};
@@ -15,7 +16,7 @@ use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier};
 use std::thread;
-use std::thread::{sleep, JoinHandle};
+use std::thread::{JoinHandle, sleep};
 use std::time::Duration;
 
 struct SearchResult {
@@ -85,7 +86,7 @@ impl SearchThreads {
                 let mut search = Search { nodes_searched: 0 };
                 loop {
                     state.start_barrier.wait();
-                    sleep(Duration::from_millis(( i as u64 ) * 2));
+                    sleep(Duration::from_millis((i as u64) * 2));
                     if quit_signal.load(Ordering::Acquire) {
                         break;
                     }
@@ -118,9 +119,7 @@ impl SearchThreads {
 
     pub fn new_game(&mut self) {
         *self.shared_state.root_board.lock().unwrap() = Board::starting();
-        Arc::get_mut(&mut self.shared_state)
-            .unwrap()
-            .transposition_table.clear(); 
+        self.shared_state.transposition_table.clear();
         self.moves_played = 0;
     }
 
@@ -226,7 +225,11 @@ impl Search {
         if let Some(result) = transposition_table_result {
             tt_move = Some(result.best_move);
         }
-        let legal_moves = self.sort_moves(board, &legal_moves, tt_move, color);
+        let mut legal_moves = self.sort_moves(board, &legal_moves, tt_move, color);
+        if search_id > 0 {
+            legal_moves.shuffle(&mut rand::rng());
+        }
+        let legal_moves = legal_moves;
 
         let mut best_score = -i32::MAX;
         let mut best_move = &legal_moves[0];
@@ -254,6 +257,7 @@ impl Search {
                     -color,
                     &time_ok,
                     nodes_searched,
+                    search_id,
                 );
                 board.unmake_move(mov, metadata);
                 if eval > depth_best_score {
@@ -264,7 +268,8 @@ impl Search {
                 if search_id == 0 {
                     let score = if depth > 0 { best_score } else { 0 };
                     let time = timer.elapsed().as_secs_f64();
-                    let nodes = nodes_searched.load(Ordering::Relaxed) + (self.nodes_searched & 2047);
+                    let nodes =
+                        nodes_searched.load(Ordering::Relaxed) + (self.nodes_searched & 2047);
                     println!(
                         "info depth {} score {} time {} nodes {} nps {}",
                         depth,
@@ -305,6 +310,7 @@ impl Search {
         color: i32,
         time_ok: &F,
         nodes_searched: &AtomicU64,
+        search_id: usize,
     ) -> i32
     where
         F: Fn() -> bool,
@@ -364,7 +370,10 @@ impl Search {
         }
 
         let moves = moves.into_iter().map(|mov| mov.0).collect();
-        let sorted_moves = self.sort_moves(board, &moves, tt_move, color);
+        let mut sorted_moves = self.sort_moves(board, &moves, tt_move, color);
+        if search_id > 0 {
+            sorted_moves.shuffle(&mut rand::rng());
+        }
 
         let mut best_move = sorted_moves[0];
         for mov in sorted_moves {
@@ -382,6 +391,7 @@ impl Search {
                 -color,
                 time_ok,
                 nodes_searched,
+                search_id,
             );
             board.unmake_move(&mov, metadata);
             if value > alpha {
