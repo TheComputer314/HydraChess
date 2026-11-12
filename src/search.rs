@@ -10,13 +10,13 @@ use minstant::Instant;
 use rand::seq::SliceRandom;
 use std::cmp::Reverse;
 use std::io::stdout;
-use std::io::{Stdout, Write};
+use std::io::Write;
 use std::sync::Mutex;
 use std::sync::atomic::Ordering::Relaxed;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Barrier};
 use std::thread;
-use std::thread::{JoinHandle, sleep};
+use std::thread::sleep;
 use std::time::Duration;
 
 struct SearchResult {
@@ -73,7 +73,7 @@ impl SearchThreads {
             start_barrier: Barrier::new(total_threads),
             end_barrier: Barrier::new(total_threads),
             root_board: Mutex::new(Board::starting()),
-            transposition_table: TranspositionTable::new(40),
+            transposition_table: TranspositionTable::new(64),
             results,
             nodes_searched: AtomicU64::new(0),
         });
@@ -167,7 +167,6 @@ impl SearchThreads {
             } else {
                 (black_time_left_ms, black_increment)
             };
-        println!("Starting search");
         self.shared_state.nodes_searched.store(0, Relaxed);
         self.shared_state.time_left.store(time_left_ms, Relaxed);
         self.shared_state.increment.store(increment, Relaxed);
@@ -182,7 +181,9 @@ impl SearchThreads {
             .max_by_key(|r| (r.depth, r.score))
             .unwrap()
             .best_move;
-        println!("bestmove {}", best_result);
+        let mut out = stdout().lock();
+        writeln!(out, "bestmove {}", best_result).unwrap();
+        out.flush().unwrap();
         self.shared_state
             .root_board
             .lock()
@@ -257,7 +258,6 @@ impl Search {
                     -color,
                     &time_ok,
                     nodes_searched,
-                    search_id,
                 );
                 board.unmake_move(mov, metadata);
                 if eval > depth_best_score {
@@ -270,14 +270,30 @@ impl Search {
                     let time = timer.elapsed().as_secs_f64();
                     let nodes =
                         nodes_searched.load(Ordering::Relaxed) + (self.nodes_searched & 2047);
-                    println!(
-                        "info depth {} score {} time {} nodes {} nps {}",
-                        depth,
-                        score,
-                        time,
-                        nodes,
-                        nodes as f64 / time
-                    );
+                    let mut out = stdout().lock();
+                    if self.is_mate_score(score) {
+                        let mate_in_ply = Self::IMMEDIATE_MATE_SCORE - depth_best_score.abs();
+                        writeln!(
+                            out,
+                            "info depth {} score mate {} time {} nodes {} nps {}",
+                            depth + 1,
+                            ((mate_in_ply + 1) / 2) * depth_best_score.signum(),
+                            time,
+                            nodes,
+                            nodes as f64 / time
+                        ).unwrap();
+                    } else {
+                        writeln!(
+                            out,
+                            "info depth {} score cp {} time {} nodes {} nps {}",
+                            depth + 1,
+                            score,
+                            time,
+                            nodes,
+                            nodes as f64 / time
+                        ).unwrap();
+                    }
+                    out.flush().unwrap();
                 }
 
                 if !time_ok() {
@@ -310,7 +326,6 @@ impl Search {
         color: i32,
         time_ok: &F,
         nodes_searched: &AtomicU64,
-        search_id: usize,
     ) -> i32
     where
         F: Fn() -> bool,
@@ -371,9 +386,6 @@ impl Search {
 
         let moves = moves.into_iter().map(|mov| mov.0).collect();
         let mut sorted_moves = self.sort_moves(board, &moves, tt_move, color);
-        if search_id > 0 {
-            sorted_moves.shuffle(&mut rand::rng());
-        }
 
         let mut best_move = sorted_moves[0];
         for mov in sorted_moves {
@@ -391,7 +403,6 @@ impl Search {
                 -color,
                 time_ok,
                 nodes_searched,
-                search_id,
             );
             board.unmake_move(&mov, metadata);
             if value > alpha {
