@@ -12,17 +12,16 @@ use std::io::stdout;
 use std::io::{Stdout, Write};
 use std::sync::Mutex;
 use std::sync::atomic::Ordering::Relaxed;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier};
 use std::thread;
 use std::thread::JoinHandle;
 
 struct SearchResult {
-    // TODO
     depth: usize,
     score: i32,
     best_move: Move,
-    // pv: Vec<Move>,
+    // pv: Vec<Move>, // TODO
 }
 
 struct SharedState {
@@ -34,6 +33,7 @@ struct SharedState {
     // Transposition table is lock-free to allow TT improvements in one thread to improve search in another
     transposition_table: TranspositionTable,
     results: Vec<Mutex<SearchResult>>,
+    nodes_searched: AtomicU64,
 }
 
 pub struct Signals {
@@ -70,6 +70,7 @@ impl SearchThreads {
             root_board: Mutex::new(Board::starting()),
             transposition_table: TranspositionTable::new(20),
             results,
+            nodes_searched: AtomicU64::new(0),
         });
 
         for i in 0..SEARCH_THREADS {
@@ -77,7 +78,7 @@ impl SearchThreads {
             let stop_signal = Arc::clone(&signals.stop_signal);
             let quit_signal = Arc::clone(&signals.quit_signal);
             thread::spawn(move || {
-                let search = Search {};
+                let mut search = Search { nodes_searched: 0 };
                 loop {
                     state.start_barrier.wait();
                     if quit_signal.load(Ordering::Acquire) {
@@ -91,6 +92,8 @@ impl SearchThreads {
                         &stop_signal,
                         state.time_left.load(Relaxed),
                         state.increment.load(Relaxed),
+                        &state.nodes_searched,
+                        i
                     );
 
                     state.results[i].lock().unwrap().best_move = search;
@@ -161,6 +164,7 @@ impl SearchThreads {
                 (black_time_left_ms, black_increment)
             };
         println!("Starting search");
+        self.shared_state.nodes_searched.store(0, Relaxed);
         self.shared_state.time_left.store(time_left_ms, Relaxed);
         self.shared_state.increment.store(increment, Relaxed);
         self.shared_state.start_barrier.wait();
@@ -175,20 +179,31 @@ impl SearchThreads {
             .unwrap()
             .best_move;
         println!("bestmove {}", best_result);
+        self.shared_state
+            .root_board
+            .lock()
+            .unwrap()
+            .make_move(&best_result);
     }
 }
 
-struct Search {}
+struct Search {
+    nodes_searched: u64,
+}
 
 impl Search {
+    #[allow(clippy::too_many_arguments)]
     fn search(
-        &self,
+        &mut self,
         board: &mut Board,
         transposition_table: &TranspositionTable,
         stop_signal: &AtomicBool,
         time_left_ms: u64,
         increment: u64,
+        nodes_searched: &AtomicU64,
+        search_id: usize,
     ) -> Move {
+        self.nodes_searched = 0;
         let legal_moves = move_generation::legal_moves(board);
         if legal_moves.is_empty() {
             panic!(
@@ -208,6 +223,7 @@ impl Search {
         }
         let legal_moves = self.sort_moves(board, &legal_moves, tt_move, color);
 
+        let mut best_score = -i32::MAX;
         let mut best_move = &legal_moves[0];
         let max_depth = 16;
         let timer = Instant::now();
@@ -232,6 +248,7 @@ impl Search {
                     i32::MAX,
                     -color,
                     &time_ok,
+                    nodes_searched,
                 );
                 board.unmake_move(mov, metadata);
                 if eval > depth_best_score {
@@ -239,10 +256,24 @@ impl Search {
                     depth_best_move = mov;
                 }
 
+                if search_id == 0 {
+                    let time = timer.elapsed().as_secs_f64();
+                    let nodes = nodes_searched.load(Ordering::Relaxed);
+                    println!(
+                        "info depth {} score {} time {} nodes {} nps {}",
+                        depth,
+                        best_score,
+                        time,
+                        nodes,
+                        nodes as f64 / time
+                    );
+                }
+
                 if !time_ok() {
                     break 'iterative_deepening;
                 }
             }
+            best_score = depth_best_score;
             best_move = depth_best_move;
         }
 
@@ -255,8 +286,9 @@ impl Search {
         score.abs() > Self::IMMEDIATE_MATE_SCORE - 100000
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn negamax<F>(
-        &self,
+        &mut self,
         board: &mut Board,
         transposition_table: &TranspositionTable,
         depth: u8,
@@ -265,6 +297,7 @@ impl Search {
         beta: i32,
         color: i32,
         time_ok: &F,
+        nodes_searched: &AtomicU64,
     ) -> i32
     where
         F: Fn() -> bool,
@@ -272,6 +305,7 @@ impl Search {
         if board.get_halfmove_clock() > 100 || board.times_played() >= 3 {
             return 0;
         }
+        self.count_nodes(nodes_searched);
         let mut evaluation_type = 1;
 
         // Alpha can't possibly be worse than getting checkmated right now, if it is it means we already found a
@@ -318,6 +352,7 @@ impl Search {
                 search_ply + 1,
                 color,
                 time_ok,
+                nodes_searched,
             );
         }
 
@@ -339,6 +374,7 @@ impl Search {
                 -alpha,
                 -color,
                 time_ok,
+                nodes_searched,
             );
             board.unmake_move(&mov, metadata);
             if value > alpha {
@@ -361,7 +397,7 @@ impl Search {
     }
 
     fn quiescence<F>(
-        &self,
+        &mut self,
         board: &mut Board,
         moves: (Vec<(Move, Option<u8>)>, bool),
         alpha: i32,
@@ -369,6 +405,7 @@ impl Search {
         search_ply: i32,
         color: i32,
         time_ok: &F,
+        nodes_searched: &AtomicU64,
     ) -> i32
     where
         F: Fn() -> bool,
@@ -380,6 +417,8 @@ impl Search {
         if board.get_halfmove_clock() > 100 || board.times_played() >= 3 {
             return 0;
         }
+
+        self.count_nodes(nodes_searched);
 
         let (mut moves, check) = moves;
         if moves.is_empty() {
@@ -423,6 +462,7 @@ impl Search {
                 search_ply + 1,
                 -color,
                 time_ok,
+                nodes_searched,
             );
             board.unmake_move(&mov, metadata);
             if eval >= beta {
@@ -479,5 +519,12 @@ impl Search {
         }
         sorted_moves.sort_by_key(|mov| Reverse(mov.1));
         sorted_moves.iter().map(|mov| *mov.0).collect()
+    }
+
+    fn count_nodes(&mut self, nodes_searched: &AtomicU64) {
+        self.nodes_searched += 1;
+        if self.nodes_searched % 2047 == 0 {
+            nodes_searched.fetch_add(2048, Ordering::Relaxed);
+        }
     }
 }
