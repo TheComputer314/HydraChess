@@ -15,7 +15,8 @@ use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier};
 use std::thread;
-use std::thread::JoinHandle;
+use std::thread::{sleep, JoinHandle};
+use std::time::Duration;
 
 struct SearchResult {
     depth: usize,
@@ -84,6 +85,7 @@ impl SearchThreads {
                 let mut search = Search { nodes_searched: 0 };
                 loop {
                     state.start_barrier.wait();
+                    sleep(Duration::from_millis(( i as u64 ) * 2));
                     if quit_signal.load(Ordering::Acquire) {
                         break;
                     }
@@ -96,7 +98,7 @@ impl SearchThreads {
                         state.time_left.load(Relaxed),
                         state.increment.load(Relaxed),
                         &state.nodes_searched,
-                        i
+                        i,
                     );
 
                     state.results[i].lock().unwrap().best_move = search;
@@ -260,12 +262,13 @@ impl Search {
                 }
 
                 if search_id == 0 {
+                    let score = if depth > 0 { best_score } else { 0 };
                     let time = timer.elapsed().as_secs_f64();
-                    let nodes = nodes_searched.load(Ordering::Relaxed);
+                    let nodes = nodes_searched.load(Ordering::Relaxed) + (self.nodes_searched & 2047);
                     println!(
                         "info depth {} score {} time {} nodes {} nps {}",
                         depth,
-                        best_score,
+                        score,
                         time,
                         nodes,
                         nodes as f64 / time
@@ -400,6 +403,7 @@ impl Search {
         alpha
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn quiescence<F>(
         &mut self,
         board: &mut Board,
