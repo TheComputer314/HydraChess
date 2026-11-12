@@ -87,19 +87,19 @@ fn main() {
                                 break;
                             }
                             if parts[i] == "wtime" {
-                                temp_white_time_left_ms = parts[i + 1].parse().unwrap();
+                                temp_white_time_left_ms = parts[i + 1].parse().unwrap_or(u64::MAX);
                                 i += 2;
                                 continue;
                             } else if parts[i] == "winc" {
-                                temp_white_increment = parts[i + 1].parse().unwrap();
+                                temp_white_increment = parts[i + 1].parse().unwrap_or(0);
                                 i += 2;
                                 continue;
                             } else if parts[i] == "btime" {
-                                temp_black_time_left_ms = parts[i + 1].parse().unwrap();
+                                temp_black_time_left_ms = parts[i + 1].parse().unwrap_or(u64::MAX);
                                 i += 2;
                                 continue;
                             } else if parts[i] == "binc" {
-                                temp_black_increment = parts[i + 1].parse().unwrap();
+                                temp_black_increment = parts[i + 1].parse().unwrap_or(0);
                                 i += 2;
                                 continue;
                             } else {
