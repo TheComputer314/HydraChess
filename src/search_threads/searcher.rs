@@ -309,6 +309,9 @@ impl Search {
         }
 
         let moves = moves.filter_captures();
+        if moves.length == 0 {
+            return (alpha, search_ply);
+        }
         let moves = self.sort_moves(board, &moves, None, None, color);
 
         let mut best_search_ply = search_ply;
