@@ -18,7 +18,7 @@ use std::thread::sleep;
 use std::time::Duration;
 
 struct SearchResult {
-    depth: usize,
+    depth: u8,
     score: i32,
     best_move: Move,
     // pv: Vec<Move>, // TODO
@@ -91,7 +91,7 @@ impl SearchThreads {
                     }
                     let mut board = state.root_board.lock().unwrap().clone();
 
-                    let search = search.search(
+                    let result = search.search(
                         &mut board,
                         &state.transposition_table,
                         &stop_signal,
@@ -101,7 +101,7 @@ impl SearchThreads {
                         i,
                     );
 
-                    state.results[i].lock().unwrap().best_move = search;
+                    *state.results[i].lock().unwrap() = result;
                     if quit_signal.load(Ordering::Acquire) {
                         break;
                     }

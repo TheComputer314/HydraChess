@@ -2,8 +2,8 @@ use crate::move_generation;
 use crate::move_generation::mov::Move;
 use crate::move_generation::mov::piece_type::PAWN;
 use crate::move_generation::{Board, Moves, MovesWithMetadata};
-use crate::search_threads::evaluation;
 use crate::search_threads::transposition_table::{EntryResult, TranspositionTable};
+use crate::search_threads::{SearchResult, evaluation};
 use minstant::Instant;
 use rand::seq::SliceRandom;
 use std::cmp::Reverse;
@@ -37,7 +37,7 @@ impl Search {
         increment: u64,
         nodes_searched: &AtomicU64,
         search_id: usize,
-    ) -> Move {
+    ) -> SearchResult {
         self.nodes_searched = 0;
         self.killer_moves.fill(None);
         let legal_moves = move_generation::legal_moves(board);
@@ -48,7 +48,11 @@ impl Search {
             );
         }
         if legal_moves.length == 1 {
-            return legal_moves.moves[0];
+            return SearchResult {
+                depth: 0,
+                score: 0,
+                best_move: legal_moves.moves[0],
+            };
         }
 
         let color = if board.white_to_move() { 1 } else { -1 };
@@ -65,6 +69,7 @@ impl Search {
 
         let mut best_score = -i32::MAX;
         let mut best_move = &legal_moves[0];
+        let mut best_depth = 0;
         let timer = Instant::now();
         let time_ok = || {
             let elapsed = timer.elapsed().as_millis() as u64;
@@ -134,10 +139,15 @@ impl Search {
             }
             best_score = depth_best_score;
             best_move = depth_best_move;
+            best_depth = depth;
         }
 
         nodes_searched.fetch_add(self.nodes_searched % 2047, Ordering::Relaxed);
-        *best_move
+        SearchResult {
+            depth: best_depth,
+            score: best_score,
+            best_move: *best_move,
+        }
     }
 
     const IMMEDIATE_MATE_SCORE: i32 = i32::MAX / 2;
