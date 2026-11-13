@@ -202,7 +202,7 @@ fn lerp_value(opening: i32, endgame: i32, pieces_left: u32) -> i32 {
     let b = endgame;
     // Remove kings from count
     let t = pieces_left as i32 - 2;
-    (a * (30 - t) + b * t) / 30
+    (a * t + b * (30 - t)) / 30
 }
 
 const PIECE_VALUES: [i32; 6] = [100, 220, 430, 600, 1000, 20_000];
