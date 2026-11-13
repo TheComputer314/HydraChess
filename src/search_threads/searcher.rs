@@ -205,12 +205,12 @@ impl Search {
         }
 
         let mut extensions = -1;
-        // if moves.length == 1 {
-        //     extensions += 1;
-        // }
-        // if moves.check {
-        //     extensions += 1;
-        // }
+        if moves.length == 1 {
+            extensions += 1;
+        }
+        if moves.check {
+            extensions += 1;
+        }
 
         let moves = moves.strip_metadata();
         let sorted_moves = self.sort_moves(
@@ -231,10 +231,10 @@ impl Search {
 
             let mut move_extensions = extensions;
             let mut late_move_reduction = false;
-            // if depth > 2 && sorted_moves.len() > 4 && i > 2 {
-            //     move_extensions -= 1; // Late move reduction
-            //     late_move_reduction = true;
-            // }
+            if depth > 2 && sorted_moves.len() > 4 && i > 2 {
+                move_extensions -= 1; // Late move reduction
+                late_move_reduction = true;
+            }
 
             let metadata = board.make_move(&mov);
             let (value, mut searched_ply) = self.negamax(
