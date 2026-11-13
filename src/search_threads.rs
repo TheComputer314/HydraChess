@@ -7,6 +7,7 @@ use super::move_generation::Board;
 use crate::move_generation::mov::Move;
 use crate::search_threads::searcher::Search;
 use crate::search_threads::transposition_table::TranspositionTable;
+use minstant::Instant;
 use std::io::Write;
 use std::io::stdout;
 use std::sync::Mutex;
@@ -19,6 +20,7 @@ use std::time::Duration;
 
 struct SearchResult {
     depth: u8,
+    best_ply: u8,
     score: i32,
     best_move: Move,
     // pv: Vec<Move>, // TODO
@@ -61,6 +63,7 @@ impl SearchThreads {
         for _ in 0..SEARCH_THREADS {
             results.push(Mutex::new(SearchResult {
                 depth: 0,
+                best_ply: 0,
                 score: 0,
                 best_move: Move::null(),
             }));
@@ -169,6 +172,7 @@ impl SearchThreads {
         self.shared_state.nodes_searched.store(0, Relaxed);
         self.shared_state.time_left.store(time_left_ms, Relaxed);
         self.shared_state.increment.store(increment, Relaxed);
+        let time = Instant::now();
         self.shared_state.start_barrier.wait();
         self.shared_state.end_barrier.wait();
 
@@ -178,15 +182,56 @@ impl SearchThreads {
             .iter()
             .map(|m| m.lock().unwrap())
             .max_by_key(|r| (r.depth, r.score))
-            .unwrap()
-            .best_move;
+            .unwrap();
+        print_info(
+            best_result.depth,
+            best_result.best_ply,
+            best_result.score,
+            time.elapsed().as_secs_f64(),
+            self.shared_state.nodes_searched.load(Relaxed),
+        );
         let mut out = stdout().lock();
-        writeln!(out, "bestmove {}", best_result).unwrap();
+        writeln!(out, "bestmove {}", best_result.best_move).unwrap();
         out.flush().unwrap();
         self.shared_state
             .root_board
             .lock()
             .unwrap()
-            .make_move(&best_result);
+            .make_move(&best_result.best_move);
     }
+}
+
+fn is_mate_score(score: i32) -> bool {
+    score.abs() > Search::IMMEDIATE_MATE_SCORE - 100000
+}
+
+fn print_info(depth: u8, depth_best_ply: u8, score: i32, time: f64, nodes: u64) {
+    let mut out = stdout().lock();
+    if is_mate_score(score) {
+        let mate_in_ply = Search::IMMEDIATE_MATE_SCORE - score.abs();
+        writeln!(
+            out,
+            "info depth {} seldepth {} score mate {} time {} nodes {} nps {}",
+            depth + 1,
+            depth_best_ply + 1,
+            ((mate_in_ply + 1) / 2) * score.signum(),
+            (time * 1000.0).round() as u64,
+            nodes,
+            (nodes as f64 / time).round() as u64
+        )
+        .unwrap();
+    } else {
+        writeln!(
+            out,
+            "info depth {} seldepth {} score cp {} time {} nodes {} nps {}",
+            depth + 1,
+            depth_best_ply + 1,
+            score,
+            (time * 1000.0).round() as u64,
+            nodes,
+            (nodes as f64 / time).round() as u64
+        )
+        .unwrap();
+    }
+    out.flush().unwrap();
 }
