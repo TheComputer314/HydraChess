@@ -226,15 +226,24 @@ impl Search {
 
         let mut best_move = sorted_moves[0];
         let mut best_searched_ply = search_ply;
-        for mov in sorted_moves {
+        for i in 0..sorted_moves.len() {
             if !time_ok() {
                 return (alpha, best_searched_ply);
             }
+            let mov = sorted_moves[i];
+
+            let mut move_extensions = extensions;
+            let mut late_move_reduction = false;
+            if depth > 2 && sorted_moves.len() > 4 && i > 2 {
+                move_extensions -= 1; // Late move reduction
+                late_move_reduction = true;
+            }
+
             let metadata = board.make_move(&mov);
-            let (value, searched_ply) = self.negamax(
+            let (value, mut searched_ply) = self.negamax(
                 board,
                 transposition_table,
-                max(0, depth as i8 + extensions) as u8,
+                max(0, depth as i8 + move_extensions) as u8,
                 search_ply + 1,
                 -beta,
                 -alpha,
@@ -242,7 +251,24 @@ impl Search {
                 time_ok,
                 nodes_searched,
             );
-            let value = -value;
+            let mut value = -value;
+            // If our reduced depth search turns out to be better,
+            if late_move_reduction && value > alpha {
+                // Need to do a full research
+                let (researched_value, researched_ply) = self.negamax(
+                    board,
+                    transposition_table,
+                    depth,
+                    search_ply + 1,
+                    -beta,
+                    -alpha,
+                    -color,
+                    time_ok,
+                    nodes_searched,
+                );
+                value = -researched_value;
+                searched_ply = researched_ply;
+            }
             board.unmake_move(&mov, metadata);
             if value > alpha {
                 alpha = value;
