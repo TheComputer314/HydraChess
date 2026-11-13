@@ -79,7 +79,7 @@ impl Search {
                 && elapsed < (time_left_ms / 20 + increment / 2)
                 && elapsed < 10000
         };
-        for depth in 0..MAX_DEPTH {
+        'iterative_deepening: for depth in 0..MAX_DEPTH {
             let mut depth_best_score = -i32::MAX;
             let mut depth_best_move = best_move;
             let mut depth_best_ply = 0;
@@ -114,16 +114,13 @@ impl Search {
                 }
 
                 if !time_ok() {
-                    break;
+                    break 'iterative_deepening;
                 }
             }
             best_score = depth_best_score;
             best_move = depth_best_move;
             best_depth = depth;
             best_ply = depth_best_ply;
-            if !time_ok() {
-                break;
-            }
         }
 
         nodes_searched.fetch_add(self.nodes_searched % 2047, Ordering::Relaxed);
