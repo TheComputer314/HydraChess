@@ -92,7 +92,7 @@ impl Search {
                     depth,
                     0,
                     -i32::MAX,
-                    i32::MAX,
+                    -depth_best_score,
                     -color,
                     &time_ok,
                     nodes_searched,
