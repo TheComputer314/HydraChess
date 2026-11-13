@@ -12,7 +12,7 @@ use std::io::stdout;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-const MAX_DEPTH: u8 = 8;
+const MAX_DEPTH: u8 = 16;
 
 pub struct Search {
     pub(crate) nodes_searched: u64,
