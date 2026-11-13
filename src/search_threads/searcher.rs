@@ -370,7 +370,8 @@ impl Search {
             } else if let Some(killer_move) = killer_move
                 && killer_move.eq(mov)
             {
-                if board.get_piece_at_square(mov.ending_index()).is_none() {
+                if mov.flags() != 0b0001 && board.get_piece_at_square(mov.ending_index()).is_none()
+                {
                     value = 10_000; // If killer move is quiet, score below captures but above normal quiets
                 } else {
                     value = 1 << 19; // If capture, score below TT best move but above everything else
