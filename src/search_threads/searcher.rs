@@ -73,6 +73,7 @@ impl Search {
         let mut best_depth = 0;
         let mut best_ply = 0;
         let timer = Instant::now();
+        let mut last_print_time = timer.elapsed().as_secs_f64();
         let time_ok = || {
             let elapsed = timer.elapsed().as_millis() as u64;
             !stop_signal.load(Relaxed)
@@ -110,7 +111,10 @@ impl Search {
                     let time = timer.elapsed().as_secs_f64();
                     let nodes =
                         nodes_searched.load(Ordering::Relaxed) + (self.nodes_searched & 2047);
-                    print_info(depth, depth_best_ply, score, time, nodes);
+                    if timer.elapsed().as_secs_f64() - last_print_time > 0.05 {
+                        print_info(depth, depth_best_ply, score, time, nodes);
+                        last_print_time = timer.elapsed().as_secs_f64();
+                    }
                 }
 
                 if !time_ok() {
