@@ -87,7 +87,7 @@ impl Search {
             for mov in &legal_moves {
                 let metadata = board.make_move(mov);
 
-                let (eval, searched_ply) = self.negamax(
+                let result = self.negamax(
                     board,
                     transposition_table,
                     depth,
@@ -98,6 +98,12 @@ impl Search {
                     &time_ok,
                     nodes_searched,
                 );
+                if result.is_none() {
+                    break 'iterative_deepening;
+                }
+
+                let (eval, searched_ply) = result.unwrap();
+
                 let eval = -eval;
                 board.unmake_move(mov, metadata);
                 if eval > depth_best_score {
@@ -150,12 +156,12 @@ impl Search {
         color: i32,
         time_ok: &F,
         nodes_searched: &AtomicU64,
-    ) -> (i32, u8)
+    ) -> Option<(i32, u8)>
     where
         F: Fn() -> bool,
     {
         if board.get_halfmove_clock() > 100 || board.times_played() >= 3 {
-            return (0, search_ply);
+            return Some((0, search_ply));
         }
         self.count_nodes(nodes_searched);
         let mut evaluation_type = 1;
@@ -166,15 +172,15 @@ impl Search {
         let mut alpha = alpha.max(-Self::IMMEDIATE_MATE_SCORE + search_ply as i32);
         let mut beta = beta.min(Self::IMMEDIATE_MATE_SCORE - search_ply as i32);
         if alpha >= beta {
-            return (alpha, search_ply);
+            return Some((alpha, search_ply));
         }
 
         let moves = move_generation::legal_moves_with_metadata(board);
         if moves.length == 0 {
             return if moves.check {
-                (search_ply as i32 - Self::IMMEDIATE_MATE_SCORE, search_ply) // Checkmate
+                Some((search_ply as i32 - Self::IMMEDIATE_MATE_SCORE, search_ply)) // Checkmate
             } else {
-                (0, search_ply) // Draw by no legal moves
+                Some((0, search_ply)) // Draw by no legal moves
             };
         }
 
@@ -184,13 +190,13 @@ impl Search {
             tt_move = Some(tt_result.best_move);
             if tt_result.depth >= depth {
                 match tt_result.node_type {
-                    1 => beta = beta.min(tt_result.score),     // Upper bound
-                    0 => return (tt_result.score, search_ply), // Exact
-                    -1 => alpha = alpha.max(tt_result.score),  // Lower bound
+                    1 => beta = beta.min(tt_result.score),           // Upper bound
+                    0 => return Some((tt_result.score, search_ply)), // Exact
+                    -1 => alpha = alpha.max(tt_result.score),        // Lower bound
                     _ => {}
                 }
                 if alpha >= beta {
-                    return (tt_result.score, search_ply);
+                    return Some((tt_result.score, search_ply));
                 }
             }
         }
@@ -226,10 +232,11 @@ impl Search {
         );
 
         let mut best_move = sorted_moves[0];
+        let mut best_value = -i32::MAX;
         let mut best_searched_ply = search_ply;
         for i in 0..sorted_moves.len() {
             if !time_ok() {
-                return (alpha, best_searched_ply);
+                return None;
             }
             let mov = sorted_moves[i];
 
@@ -241,7 +248,7 @@ impl Search {
             }
 
             let metadata = board.make_move(&mov);
-            let (value, mut searched_ply) = self.negamax(
+            let result = self.negamax(
                 board,
                 transposition_table,
                 max(0, depth as i8 + move_extensions) as u8,
@@ -252,11 +259,16 @@ impl Search {
                 time_ok,
                 nodes_searched,
             );
+
+            result?;
+
+            let (value, mut searched_ply) = result.unwrap();
+
             let mut value = -value;
-            // If our reduced depth search turns out to be better,
-            if late_move_reduction && value > alpha {
+            // If our reduced depth search turns out to be worth looking at and not immediately cut off,
+            if late_move_reduction && alpha < value && value < beta {
                 // Need to do a full research at the depth without reductions
-                let (researched_value, researched_ply) = self.negamax(
+                let result = self.negamax(
                     board,
                     transposition_table,
                     max(0, depth as i8 + extensions) as u8,
@@ -267,17 +279,22 @@ impl Search {
                     time_ok,
                     nodes_searched,
                 );
+                result?;
+
+                let (researched_value, researched_ply) = result.unwrap();
                 value = -researched_value;
                 searched_ply = researched_ply;
             }
             board.unmake_move(&mov, metadata);
+            if value > best_value {
+                best_value = value;
+                best_move = mov;
+                best_searched_ply = searched_ply;
+            }
             if value > alpha {
                 alpha = value;
                 evaluation_type = 0;
-                best_move = mov;
-                best_searched_ply = searched_ply;
                 if alpha >= beta {
-                    alpha = beta;
                     evaluation_type = -1;
                     self.killer_moves[search_ply as usize] = Some(mov);
                     break;
@@ -287,9 +304,9 @@ impl Search {
 
         transposition_table.insert(
             board.zobrist_hash,
-            EntryResult::new(depth, alpha, evaluation_type, best_move),
+            EntryResult::new(depth, best_value, evaluation_type, best_move),
         );
-        (alpha, best_searched_ply)
+        Some((best_value, best_searched_ply))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -303,48 +320,48 @@ impl Search {
         color: i32,
         time_ok: &F,
         nodes_searched: &AtomicU64,
-    ) -> (i32, u8)
+    ) -> Option<(i32, u8)>
     where
         F: Fn() -> bool,
     {
         if !time_ok() {
-            return (0, search_ply);
+            return None;
         }
 
         if board.get_halfmove_clock() > 100 || board.times_played() >= 3 {
-            return (0, search_ply);
+            return Some((0, search_ply));
         }
 
         self.count_nodes(nodes_searched);
 
         if moves.length == 0 {
             return if moves.check {
-                (search_ply as i32 - Self::IMMEDIATE_MATE_SCORE, search_ply) // Checkmate
+                Some((search_ply as i32 - Self::IMMEDIATE_MATE_SCORE, search_ply)) // Checkmate
             } else {
-                (0, search_ply) // Draw by no legal moves
+                Some((0, search_ply)) // Draw by no legal moves
             };
         }
 
-        let mut alpha = alpha;
-
         let static_eval = evaluation::evaluate(board) * color;
         if static_eval >= beta {
-            return (beta, search_ply);
+            return Some((static_eval, search_ply));
         }
+        let mut alpha = alpha;
         if static_eval > alpha {
             alpha = static_eval;
         }
+        let mut best_value = static_eval;
 
         let moves = moves.filter_captures();
         if moves.length == 0 {
-            return (alpha, search_ply);
+            return Some((best_value, search_ply));
         }
         let moves = self.sort_moves(board, &moves, None, None, color);
 
         let mut best_search_ply = search_ply;
         for mov in moves {
             if !time_ok() {
-                return (alpha, search_ply);
+                return None;
             }
             let see = evaluation::static_exchange_evaluation(board, &mov);
             if see < 0 {
@@ -352,7 +369,7 @@ impl Search {
             }
 
             let metadata = board.make_move(&mov);
-            let (eval, searched_ply) = self.quiescence(
+            let result = self.quiescence(
                 board,
                 move_generation::legal_moves_with_metadata(board),
                 -beta,
@@ -362,18 +379,26 @@ impl Search {
                 time_ok,
                 nodes_searched,
             );
+
+            result?;
+
+            let (eval, searched_ply) = result.unwrap();
+
             let eval = -eval;
             board.unmake_move(&mov, metadata);
-            if eval >= beta {
-                return (beta, search_ply);
+            if eval > best_value {
+                best_value = eval;
+                best_search_ply = searched_ply;
             }
             if eval > alpha {
                 alpha = eval;
-                best_search_ply = searched_ply;
+                if alpha >= beta {
+                    break;
+                }
             }
         }
 
-        (alpha, best_search_ply)
+        Some((best_value, best_search_ply))
     }
 
     fn sort_moves(
