@@ -1,6 +1,3 @@
-[build]
-rustflags = ["-C", "target_cpu=native", "link-arg=-fuse-ld=mold", "-Clink-arg=-Wl,--no-rosegment"]
-
 [profile.release]
 #debug = true
 
