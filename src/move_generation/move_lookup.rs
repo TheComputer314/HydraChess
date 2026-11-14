@@ -1,4 +1,30 @@
+#[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::_pext_u64;
+
+#[inline(always)]
+fn pext64_software(src: u64, mask: u64) -> u64 {
+    // For each set bit of `mask` (low to high), place the corresponding
+    // bit of `src` into the next result position.
+    let mut res = 0u64;
+    let mut m = mask;
+    let mut i = 0u32;
+    while m != 0 {
+        let lsb = m & m.wrapping_neg();
+        res |= (src & lsb) >> (lsb.trailing_zeros() - i);
+        m &= m - 1;
+        i += 1;
+    }
+    res
+}
+
+#[inline(always)]
+fn pext64(src: u64, mask: u64) -> u64 {
+    #[cfg(target_arch = "x86_64")]
+    if std::arch::is_x86_feature_detected!("bmi2") {
+        return unsafe { _pext_u64(src, mask) };
+    }
+    pext64_software(src, mask)
+}
 use std::sync::LazyLock;
 
 fn get_mask_subsets(blocker: u64) -> Vec<u64> {
@@ -79,10 +105,7 @@ const ROOK_OCCUPANCY_MASKS: [u64; 64] = {
 };
 pub fn possible_rook_moves(square: u8, blocker_pieces: u64) -> u64 {
     let mask;
-    unsafe {
-        mask = ROOK_MOVES[square as usize]
-            [_pext_u64(blocker_pieces, ROOK_OCCUPANCY_MASKS[square as usize]) as usize];
-    }
+    mask = ROOK_MOVES[square as usize][pext64(blocker_pieces, ROOK_OCCUPANCY_MASKS[square as usize]) as usize];
     mask
 }
 
@@ -204,10 +227,7 @@ pub fn initialize() {
 
 pub fn possible_bishop_moves(square: u8, blocker_pieces: u64) -> u64 {
     let mask;
-    unsafe {
-        mask = BISHOP_MOVES[square as usize]
-            [_pext_u64(blocker_pieces, BISHOP_OCCUPANCY_MASKS[square as usize]) as usize];
-    }
+    mask = BISHOP_MOVES[square as usize][pext64(blocker_pieces, BISHOP_OCCUPANCY_MASKS[square as usize]) as usize];
     mask
 }
 
@@ -296,6 +316,34 @@ mod tests {
         assert_eq!(possible_bishop_moves(C3, 0), 9241421692918565393);
         assert_eq!(possible_bishop_moves(C3, 134217728), 4462742033);
         assert_eq!(possible_bishop_moves(C3, 35184506306560), 4462742033);
+    }
+
+    #[test]
+    fn test_pext64_software() {
+        use rand::SeedableRng;
+        use rand::rngs::StdRng;
+        use rand::RngExt;
+
+        fn reference_pext(src: u64, mask: u64) -> u64 {
+            let mut res = 0u64;
+            let mut m = mask;
+            let mut i = 0;
+            while m != 0 {
+                if src & (1 << m.trailing_zeros()) != 0 {
+                    res |= 1 << i;
+                }
+                m &= m - 1;
+                i += 1;
+            }
+            res
+        }
+
+        let mut rng = StdRng::seed_from_u64(42);
+        for _ in 0..100_000 {
+            let (src, mask): (u64, u64) = (rng.random(), rng.random());
+            assert_eq!(pext64_software(src, mask), reference_pext(src, mask));
+            assert_eq!(pext64(src, mask), reference_pext(src, mask));
+        }
     }
 
     #[test]
