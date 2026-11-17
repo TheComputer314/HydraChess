@@ -85,8 +85,7 @@ impl Search {
         let mut best_ply = 0;
         let mut stability = 0;
         let mut last_best_move = Move::null();
-        let timer = Instant::now();
-        let mut last_print_time = timer.elapsed().as_secs_f64();
+        let mut last_print_time = search_state.timer.elapsed().as_secs_f64();
 
         'iterative_deepening: for depth in 0..MAX_DEPTH {
             if depth > 0 {
@@ -161,12 +160,12 @@ impl Search {
 
                     if search_id == 0 {
                         let score = if depth > 0 { best_score } else { 0 };
-                        let time = timer.elapsed().as_secs_f64();
+                        let time = search_state.timer.elapsed().as_secs_f64();
                         let nodes = search_state.nodes_searched.load(Ordering::Relaxed)
                             + (self.nodes_searched & 2047);
-                        if timer.elapsed().as_secs_f64() - last_print_time > 0.05 {
+                        if search_state.timer.elapsed().as_secs_f64() - last_print_time > 0.05 {
                             print_info(depth, depth_best_ply, score, time, nodes);
-                            last_print_time = timer.elapsed().as_secs_f64();
+                            last_print_time = time;
                         }
                     }
 
