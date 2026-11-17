@@ -217,7 +217,7 @@ fn print_info(depth: u8, depth_best_ply: u8, score: i32, time: f64, nodes: u64) 
             "info depth {} seldepth {} score mate {} time {} nodes {} nps {}",
             depth + 1,
             depth_best_ply + 1,
-            ((mate_in_ply + 1) / 2) * score.signum(),
+            (mate_in_ply / 2 + 1) * score.signum(),
             (time * 1000.0).round() as u64,
             nodes,
             (nodes as f64 / time).round() as u64

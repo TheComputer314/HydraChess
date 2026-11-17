@@ -10,7 +10,7 @@ use std::cmp::{Reverse, max};
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-const MAX_DEPTH: u8 = 16;
+const MAX_DEPTH: u8 = 32;
 
 pub struct Search {
     pub(crate) nodes_searched: u64,
