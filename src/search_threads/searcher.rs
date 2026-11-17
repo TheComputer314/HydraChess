@@ -34,7 +34,7 @@ impl Search {
         }
     }
 
-    fn time_ok(search_state: &SearchState) -> bool {
+    fn time_ok_hard(search_state: &SearchState) -> bool {
         let elapsed = search_state.timer.elapsed().as_millis() as u64;
         !search_state.stop_signal.load(Relaxed)
             && elapsed < (search_state.time_left_ms / 20 + search_state.increment / 2)
@@ -67,7 +67,8 @@ impl Search {
         }
 
         let color = if board.white_to_move() { 1 } else { -1 };
-        let transposition_table_result = search_state.transposition_table.get(board.zobrist_hash, 0);
+        let transposition_table_result =
+            search_state.transposition_table.get(board.zobrist_hash, 0);
         let mut tt_move = None;
         if let Some(result) = transposition_table_result {
             tt_move = Some(result.best_move);
@@ -82,6 +83,8 @@ impl Search {
         let mut best_move = sorted_moves[0].0;
         let mut best_depth = 0;
         let mut best_ply = 0;
+        let mut stability = 0;
+        let mut last_best_move = Move::null();
         let timer = Instant::now();
         let mut last_print_time = timer.elapsed().as_secs_f64();
 
@@ -167,7 +170,7 @@ impl Search {
                         }
                     }
 
-                    if !Self::time_ok(search_state) {
+                    if !Self::time_ok_hard(search_state) {
                         break 'iterative_deepening;
                     }
                 }
@@ -203,6 +206,21 @@ impl Search {
             // We've reached the maximum depth, any further search is meaningless so exit early
             if depth + 1 == MAX_DEPTH {
                 search_state.stop_signal.store(true, Ordering::Relaxed);
+                break 'iterative_deepening;
+            }
+
+            if best_move == last_best_move {
+                stability += 1;
+            } else {
+                stability = 0;
+                last_best_move = best_move;
+            }
+
+            const MULTIPLIERS: [f64; 5] = [1.5, 1.0, 0.8, 0.75, 0.5];
+            let time_mult = MULTIPLIERS[stability.min(4) as usize];
+            if search_state.timer.elapsed().as_millis() as f64
+                > (search_state.time_left_ms / 20 + search_state.increment / 2) as f64 * time_mult
+            {
                 break 'iterative_deepening;
             }
         }
@@ -256,7 +274,9 @@ impl Search {
             };
         }
 
-        let tt_result = search_state.transposition_table.get(board.zobrist_hash, search_ply);
+        let tt_result = search_state
+            .transposition_table
+            .get(board.zobrist_hash, search_ply);
         let mut tt_move = None;
         if let Some(tt_result) = tt_result {
             tt_move = Some(tt_result.best_move);
@@ -311,7 +331,7 @@ impl Search {
         let mut best_value = -i32::MAX;
         let mut best_searched_ply = search_ply;
         for i in 0..sorted_moves.len() {
-            if !Self::time_ok(search_state) {
+            if !Self::time_ok_hard(search_state) {
                 return None;
             }
             let mov = sorted_moves[i];
@@ -411,7 +431,7 @@ impl Search {
         search_state.transposition_table.insert(
             board.zobrist_hash,
             EntryResult::new(depth, best_value, evaluation_type, best_move),
-            search_ply
+            search_ply,
         );
         Some((best_value, best_searched_ply))
     }
@@ -427,7 +447,7 @@ impl Search {
         search_ply: u8,
         color: i32,
     ) -> Option<(i32, u8)> {
-        if !Self::time_ok(search_state) {
+        if !Self::time_ok_hard(search_state) {
             return None;
         }
 
@@ -463,7 +483,7 @@ impl Search {
 
         let mut best_search_ply = search_ply;
         for mov in moves {
-            if !Self::time_ok(search_state) {
+            if !Self::time_ok_hard(search_state) {
                 return None;
             }
 
