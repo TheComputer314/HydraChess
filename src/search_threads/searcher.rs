@@ -222,8 +222,7 @@ impl Search {
             const MULTIPLIERS: [f64; 7] = [2.0, 1.5, 1.2, 1.0, 0.8, 0.75, 0.5];
             let time_mult = MULTIPLIERS[stability.min(6) as usize] * mult;
             if search_state.timer.elapsed().as_millis() as f64
-                > ((search_state.time_left_ms / 40 + search_state.increment / 3) as f64)
-                    .min(5000.0)
+                > ((search_state.time_left_ms / 40 + search_state.increment / 3) as f64).min(5000.0)
                     * time_mult
             {
                 break 'iterative_deepening;
@@ -279,14 +278,16 @@ impl Search {
             };
         }
 
+        let pv_node = search_ply == 0 || beta - alpha > 1;
+
         let tt_result = search_state
             .transposition_table
             .get(board.zobrist_hash, search_ply);
         let mut tt_move = None;
         if let Some(tt_result) = tt_result {
             tt_move = Some(tt_result.best_move);
-            let non_pv = search_ply > 0 && beta - alpha == 1;
             if tt_result.depth >= depth {
+                let non_pv = !pv_node;
                 match tt_result.node_type {
                     1 if non_pv && tt_result.score <= alpha => {
                         return Some((tt_result.score, search_ply));
@@ -321,6 +322,10 @@ impl Search {
         }
         if moves.check {
             extensions += 1;
+        }
+        // Internal Iterative Reduction: A move without a TT move is likely to be a bad move.
+        if !pv_node && depth >= 6 && tt_move.is_none() {
+            extensions -= 1;
         }
 
         let moves = moves.strip_metadata();
@@ -357,7 +362,8 @@ impl Search {
                 let full_depth = max(0, depth as i8 + extensions) as u8;
                 let reduced = depth > 2 && sorted_moves.len() > 4 && i > 2;
                 let search_depth = if reduced {
-                    max(0, depth as i8 + extensions - 1) as u8
+                    let reduction = (3.0 * i as f32 / sorted_moves.len() as f32).ceil() as i8;
+                    max(0, depth as i8 + extensions - reduction) as u8
                 } else {
                     full_depth
                 };
