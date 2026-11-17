@@ -1,7 +1,6 @@
 use crate::move_generation::mov::Move;
 use crate::search_threads::is_mate_score;
 use std::sync::atomic::{AtomicU64, Ordering};
-use crate::search_threads::searcher::Search;
 
 #[derive(Debug)]
 struct Entry {
@@ -124,7 +123,6 @@ impl TranspositionTable {
 #[cfg(test)]
 mod tests {
     use crate::move_generation::mov::Move;
-    use crate::search_threads::searcher::Search;
     use crate::search_threads::transposition_table::{EntryResult, TranspositionTable};
 
     #[test]

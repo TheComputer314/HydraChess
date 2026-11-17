@@ -40,7 +40,7 @@ impl MovesWithMetadata {
         self.moves[self.length] = move_with_metadata;
         self.length += 1;
     }
-    
+
     pub fn strip_metadata(&self) -> Moves {
         let mut moves = Moves::empty();
         for i in 0..self.length {
@@ -48,7 +48,7 @@ impl MovesWithMetadata {
         }
         moves
     }
-    
+
     pub fn filter_captures(&self) -> Moves {
         let mut moves = Moves::empty();
         for i in 0..self.length {
