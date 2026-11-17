@@ -209,17 +209,22 @@ impl Search {
                 break 'iterative_deepening;
             }
 
+            let mult;
             if best_move == last_best_move {
                 stability += 1;
+                mult = 1.0;
             } else {
                 stability = 0;
                 last_best_move = best_move;
+                mult = 1.5;
             }
 
-            const MULTIPLIERS: [f64; 5] = [1.5, 1.0, 0.8, 0.75, 0.5];
-            let time_mult = MULTIPLIERS[stability.min(4) as usize];
+            const MULTIPLIERS: [f64; 7] = [2.0, 1.5, 1.2, 1.0, 0.8, 0.75, 0.5];
+            let time_mult = MULTIPLIERS[stability.min(6) as usize] * mult;
             if search_state.timer.elapsed().as_millis() as f64
-                > (search_state.time_left_ms / 20 + search_state.increment / 2) as f64 * time_mult
+                > ((search_state.time_left_ms / 40 + search_state.increment / 3) as f64)
+                    .min(5000.0)
+                    * time_mult
             {
                 break 'iterative_deepening;
             }
