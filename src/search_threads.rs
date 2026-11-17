@@ -108,10 +108,10 @@ impl SearchThreads {
                     );
 
                     *state.results[i].lock().unwrap() = result;
+                    state.end_barrier.wait();
                     if quit_signal.load(Ordering::Acquire) {
                         break;
                     }
-                    state.end_barrier.wait();
                 }
             });
         }
