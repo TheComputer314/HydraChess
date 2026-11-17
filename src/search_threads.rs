@@ -45,53 +45,91 @@ pub struct Signals {
 
 pub struct SearchThreads {
     shared_state: Arc<SharedState>,
+    worker_handles: Vec<thread::JoinHandle<()>>,
+    stop_signal: Arc<AtomicBool>,
+    quit_signal: Arc<AtomicBool>,
     moves_played: u32,
 }
 
-// TODO: Don't hardcode
-const SEARCH_THREADS: usize = 4;
+pub(crate) const DEFAULT_SEARCH_THREADS: usize = 1;
 
 impl SearchThreads {
-    pub fn new(signals: Signals) -> Self {
+    pub fn new(signals: &Signals) -> Self {
         // Warm up the LazyLock'd lookups
         move_generation::move_lookup::initialize();
 
-        // Coordinator thread is +1
-        let total_threads = SEARCH_THREADS + 1;
+        let shared_state = Arc::new(Self::build_state(DEFAULT_SEARCH_THREADS));
+        let mut new = Self {
+            shared_state,
+            worker_handles: Vec::new(),
+            stop_signal: Arc::clone(&signals.stop_signal),
+            quit_signal: Arc::clone(&signals.quit_signal),
+            moves_played: 0,
+        };
 
-        let mut results = Vec::with_capacity(SEARCH_THREADS);
-        for _ in 0..SEARCH_THREADS {
-            results.push(Mutex::new(SearchResult {
-                depth: 0,
-                best_ply: 0,
-                score: 0,
-                best_move: Move::null(),
-            }));
+        new.spawn_threads(DEFAULT_SEARCH_THREADS);
+        new
+    }
+
+    /// Set the number of search threads. Caller must set stop_signal and quit_signal to true before calling.
+    pub fn set_threads(&mut self, threads: usize) {
+        // Release the current workers from start_barrier so they observe quit_signal and exit.
+        self.shared_state.start_barrier.wait();
+        // Join them: this drops their Arc clones, restoring unique ownership so we can resize.
+        for handle in self.worker_handles.drain(..) {
+            handle.join().unwrap();
         }
 
-        let shared_state = Arc::new(SharedState {
+        let state_mut = Arc::get_mut(&mut self.shared_state)
+            .expect("Search threads joined; no other Arc clones should remain");
+        state_mut.start_barrier = Barrier::new(threads + 1);
+        state_mut.end_barrier = Barrier::new(threads + 1);
+        state_mut.results = Self::empty_results(threads);
+
+        self.spawn_threads(threads);
+    }
+
+    fn build_state(search_threads: usize) -> SharedState {
+        SharedState {
             time_left: AtomicU64::new(0),
             increment: AtomicU64::new(0),
-            start_barrier: Barrier::new(total_threads),
-            end_barrier: Barrier::new(total_threads),
+            // Coordinator thread is +1
+            start_barrier: Barrier::new(search_threads + 1),
+            end_barrier: Barrier::new(search_threads + 1),
             root_board: Mutex::new(Board::starting()),
             transposition_table: TranspositionTable::new(64),
-            results,
+            results: Self::empty_results(search_threads),
             nodes_searched: AtomicU64::new(0),
-        });
+        }
+    }
 
-        for i in 0..SEARCH_THREADS {
-            let state = Arc::clone(&shared_state);
-            let stop_signal = Arc::clone(&signals.stop_signal);
-            let quit_signal = Arc::clone(&signals.quit_signal);
-            thread::spawn(move || {
+    fn empty_results(search_threads: usize) -> Vec<Mutex<SearchResult>> {
+        (0..search_threads)
+            .map(|_| {
+                Mutex::new(SearchResult {
+                    depth: 0,
+                    best_ply: 0,
+                    score: 0,
+                    best_move: Move::null(),
+                })
+            })
+            .collect()
+    }
+
+    fn spawn_threads(&mut self, search_threads: usize) {
+        let mut handles = Vec::with_capacity(search_threads);
+        for i in 0..search_threads {
+            let state = Arc::clone(&self.shared_state);
+            let stop_signal = Arc::clone(&self.stop_signal);
+            let quit_signal = Arc::clone(&self.quit_signal);
+            handles.push(thread::spawn(move || {
                 let mut search = Search::new();
                 loop {
                     state.start_barrier.wait();
-                    sleep(Duration::from_millis((i as u64) * 2));
                     if quit_signal.load(Ordering::Acquire) {
                         break;
                     }
+                    sleep(Duration::from_millis((i as u64) * 2));
                     let mut board = state.root_board.lock().unwrap().clone();
 
                     let result = search.search(
@@ -113,13 +151,12 @@ impl SearchThreads {
                         break;
                     }
                 }
-            });
+                println!("Thread {} finished", i);
+            }));
         }
 
-        Self {
-            shared_state,
-            moves_played: 0,
-        }
+        println!("Successfully spawned {} threads", search_threads);
+        self.worker_handles = handles;
     }
 
     pub fn new_game(&mut self) {
@@ -201,6 +238,17 @@ impl SearchThreads {
             .lock()
             .unwrap()
             .make_move(&best_result.best_move);
+    }
+}
+
+impl Drop for SearchThreads {
+    fn drop(&mut self) {
+        // Signal workers to stop, then release them from the start barrier and wait for them.
+        self.quit_signal.store(true, Ordering::Release);
+        self.shared_state.start_barrier.wait();
+        for handle in self.worker_handles.drain(..) {
+            let _ = handle.join();
+        }
     }
 }
 

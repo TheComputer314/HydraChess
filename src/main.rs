@@ -4,10 +4,10 @@ mod search_threads;
 use crate::search_threads::{SearchThreads, Signals};
 use std::io::{self, BufRead, Write};
 use std::sync::Arc;
+use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, channel};
 use std::{process, thread};
-use std::sync::atomic::Ordering::Relaxed;
 
 fn main() {
     if cfg!(not(debug_assertions)) {
@@ -33,7 +33,7 @@ fn main() {
     let search_thread_handle = thread::spawn(move || {
         search_loop(
             cmd_rx,
-            Signals {
+            &Signals {
                 stop_signal: stop_signal_clone,
                 quit_signal: quit_signal_clone,
             },
@@ -56,6 +56,12 @@ fn main() {
                 writeln!(out, "id name HydraChessV8").unwrap();
                 writeln!(out, "id author Hydra").unwrap();
                 writeln!(out, "uciok").unwrap();
+                writeln!(
+                    out,
+                    "option name Threads type spin default {} min 1 max 1024",
+                    search_threads::DEFAULT_SEARCH_THREADS
+                )
+                .unwrap();
                 out.flush().unwrap();
             }
             "isready" => {
@@ -72,6 +78,7 @@ fn main() {
             }
             "go" => {
                 stop_signal.store(false, Relaxed);
+                quit_signal.store(false, Relaxed);
                 let (white_time_left_ms, white_increment, black_time_left_ms, black_increment) =
                     if parts.len() < 2 || parts[1] == "infinite" {
                         (u64::MAX, 0, u64::MAX, 0)
@@ -123,6 +130,19 @@ fn main() {
                     })
                     .unwrap();
             }
+            "setoption" => {
+                // parts[1] == "name"
+                match parts[2] {
+                    "Threads" => {
+                        // parts[3] == "value"
+                        let threads = parts[4].parse::<usize>().unwrap();
+                        stop_signal.store(true, Ordering::Relaxed);
+                        quit_signal.store(true, Ordering::Relaxed);
+                        cmd_tx.send(EngineCommand::SetThreads(threads)).unwrap();
+                    }
+                    _ => println!("Unknown option"),
+                }
+            }
             "debug" => {
                 cmd_tx.send(EngineCommand::Debug).unwrap();
             }
@@ -154,11 +174,12 @@ enum EngineCommand {
         black_time_left_ms: u64,
         black_increment: u64,
     },
+    SetThreads(usize),
     Debug,
     Quit,
 }
 
-fn search_loop(cmd_rx: Receiver<EngineCommand>, signals: Signals) {
+fn search_loop(cmd_rx: Receiver<EngineCommand>, signals: &Signals) {
     let mut search = SearchThreads::new(signals);
     while let Ok(cmd) = cmd_rx.recv() {
         match cmd {
@@ -180,6 +201,9 @@ fn search_loop(cmd_rx: Receiver<EngineCommand>, signals: Signals) {
                     black_time_left_ms,
                     black_increment,
                 );
+            }
+            EngineCommand::SetThreads(threads) => {
+                search.set_threads(threads);
             }
             EngineCommand::Debug => {
                 search.debug();
