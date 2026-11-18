@@ -55,13 +55,13 @@ fn main() {
                 let mut out = stdout.lock();
                 writeln!(out, "id name HydraChessV8").unwrap();
                 writeln!(out, "id author Hydra").unwrap();
-                writeln!(out, "uciok").unwrap();
                 writeln!(
                     out,
                     "option name Threads type spin default {} min 1 max 1024",
                     search_threads::DEFAULT_SEARCH_THREADS
                 )
-                .unwrap();
+                    .unwrap();
+                writeln!(out, "uciok").unwrap();
                 out.flush().unwrap();
             }
             "isready" => {
