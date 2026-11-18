@@ -152,6 +152,73 @@ const ENDGAME_SQUARE_VALUES: [[i32; 64]; 6] = [
     ),
 ];
 
+const DOUBLED_PAWN_MASK: [[u64; 40]; 2] = {
+    let mut white_masks = [0; 40];
+    let mut black_masks = [0; 40];
+
+    let mut i = 0;
+    while i < 40 {
+        white_masks[i] = 0;
+        // Start at the second rank
+        let a_file_mask = 0x1010101010000;
+        white_masks[i] = a_file_mask << i;
+        // Mask out first and last rank
+        white_masks[i] &= !0xff000000000000ff;
+
+        let white_mask: u64 = white_masks[i];
+        black_masks[i] = white_mask.swap_bytes();
+        i += 1;
+    }
+    [black_masks, white_masks]
+};
+const fn get_doubled_pawn_mask(square: u8, white: bool) -> u64 {
+    if (white && square / 8 == 6) || (!white && square / 8 == 1) {
+        return 0;
+    }
+    let relative_square = if white {
+        square
+    } else {
+        (square % 8) + (7 - (square / 8)) * 8
+    };
+    DOUBLED_PAWN_MASK[white as usize][(relative_square - 8) as usize]
+}
+
+const PASSED_PAWN_MASK: [[u64; 40]; 2] = {
+    let mut white_masks = [0; 40];
+    let mut black_masks = [0; 40];
+    let mut i = 0;
+    while i < 40 {
+        // Left file
+        if i % 8 > 0 {
+            white_masks[i] = DOUBLED_PAWN_MASK[1][i - 1];
+        }
+        // Center file
+        white_masks[i] |= DOUBLED_PAWN_MASK[1][i];
+        // Right file
+        if i % 8 < 7 {
+            white_masks[i] |= DOUBLED_PAWN_MASK[1][i + 1];
+        }
+
+        let white_mask: u64 = white_masks[i];
+        black_masks[i] = white_mask.swap_bytes();
+
+        i += 1;
+    }
+
+    [black_masks, white_masks]
+};
+const fn get_passed_pawn_mask(square: u8, white: bool) -> u64 {
+    if (white && square / 8 == 6) || (!white && square / 8 == 1) {
+        return 0;
+    }
+    let relative_square = if white {
+        square
+    } else {
+        (square % 8) + (7 - (square / 8)) * 8
+    };
+    PASSED_PAWN_MASK[white as usize][(relative_square - 8) as usize]
+}
+
 pub(crate) fn evaluate(board: &Board) -> i32 {
     let mut score = 0;
     let pieces_left = board.white.count_ones() + board.black.count_ones();
@@ -185,6 +252,22 @@ pub(crate) fn evaluate(board: &Board) -> i32 {
         };
         let value = get_value(piece_type, piece_square_lookup, pieces_left);
         score += value * color_mult;
+
+        if piece_type == 0 {
+            let friendly_pawns = board.pawns & if white { board.white } else { board.black };
+            let enemy_pawns = board.pawns & if white { board.black } else { board.white };
+            // Penalize doubled pawns
+            if get_doubled_pawn_mask(square, white) & friendly_pawns != 0 {
+                score -= 40 * color_mult;
+            } else {
+                let rank = if white { square / 8 } else { 7 - (square / 8) } as i32;
+                let passed_pawn_mask = get_passed_pawn_mask(square, white);
+                // Reward passed pawns, with the reward going up as the pawn gets further up the board
+                if passed_pawn_mask & enemy_pawns == 0 {
+                    score += 10 * rank * color_mult;
+                }
+            }
+        }
     }
     score
 }
@@ -361,7 +444,7 @@ fn get_attackers(board: &Board, square: u8, occupied_squares: u64) -> u64 {
 mod tests {
     use crate::move_generation::Board;
     use crate::move_generation::mov::Move;
-    use crate::search_threads::evaluation::static_exchange_evaluation;
+    use crate::search_threads::evaluation::{get_passed_pawn_mask, static_exchange_evaluation};
 
     fn see(fen: &str, starting_square: u8, ending_square: u8) -> i32 {
         let board = Board::from_fen(fen);
@@ -382,5 +465,15 @@ mod tests {
     fn see_uses_the_correct_pawn_attack_direction() {
         assert_eq!(see("4k3/8/8/3r4/4P3/8/8/4K3 w - - 0 1", 28, 35), 600);
         assert_eq!(see("4k3/8/8/4p3/3R4/8/8/4K3 b - - 0 1", 36, 27), 600);
+    }
+
+    #[test]
+    fn test_passed_pawn_mask() {
+        assert_eq!(get_passed_pawn_mask(8, true), 0x3030303030000);
+        assert_eq!(get_passed_pawn_mask(48, false), 0x30303030300);
+        assert_eq!(get_passed_pawn_mask(15, true), 0xc0c0c0c0c00000);
+        assert_eq!(get_passed_pawn_mask(55, false), 0xc0c0c0c0c000);
+        assert_eq!(get_passed_pawn_mask(17, true), 0x7070707000000);
+        assert_eq!(get_passed_pawn_mask(17, false), 0x700);
     }
 }
