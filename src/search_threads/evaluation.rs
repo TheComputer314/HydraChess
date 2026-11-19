@@ -258,13 +258,13 @@ pub(crate) fn evaluate(board: &Board) -> i32 {
             let enemy_pawns = board.pawns & if white { board.black } else { board.white };
             // Penalize doubled pawns
             if get_doubled_pawn_mask(square, white) & friendly_pawns != 0 {
-                score -= 40 * color_mult;
+                score -= 20 * color_mult;
             } else {
                 let rank = if white { square / 8 } else { 7 - (square / 8) } as i32;
                 let passed_pawn_mask = get_passed_pawn_mask(square, white);
                 // Reward passed pawns, with the reward going up as the pawn gets further up the board
                 if passed_pawn_mask & enemy_pawns == 0 {
-                    score += 10 * rank * color_mult;
+                    score += 5 * rank * color_mult;
                 }
             }
         }
