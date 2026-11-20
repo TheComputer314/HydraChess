@@ -399,6 +399,62 @@ impl Board {
             .count()
     }
 
+    pub fn sufficient_material_to_force_mate(&self) -> bool {
+        let white_queen_count = self.get_bitboard(true, piece_type::QUEEN).count_ones();
+        let black_queen_count = self.get_bitboard(false, piece_type::QUEEN).count_ones();
+        let white_rook_count = self.get_bitboard(true, piece_type::ROOK).count_ones();
+        let black_rook_count = self.get_bitboard(false, piece_type::ROOK).count_ones();
+        let white_bishop_count = self.get_bitboard(true, piece_type::BISHOP).count_ones();
+        let black_bishop_count = self.get_bitboard(false, piece_type::BISHOP).count_ones();
+        let white_knight_count = self.get_bitboard(true, piece_type::KNIGHT).count_ones();
+        let black_knight_count = self.get_bitboard(false, piece_type::KNIGHT).count_ones();
+
+        let white_pawn_count = self.get_bitboard(true, piece_type::PAWN).count_ones();
+        let black_pawn_count = self.get_bitboard(false, piece_type::PAWN).count_ones();
+
+        let white_bishop_pair = self.has_bishop_pair(true);
+        let black_bishop_pair = self.has_bishop_pair(false);
+
+        white_queen_count > 0
+            || black_queen_count > 0
+            || white_rook_count > 0
+            || black_rook_count > 0
+            || white_pawn_count > 0
+            || black_pawn_count > 0
+            || white_bishop_pair
+            || black_bishop_pair
+            || (white_bishop_count > 0 && white_knight_count > 0)
+            || (black_bishop_count > 0 && black_knight_count > 0)
+            || white_knight_count >= 3
+            || black_knight_count >= 3
+    }
+
+    pub fn has_bishop_pair(&self, white: bool) -> bool {
+        let bishops = self.get_bitboard(white, piece_type::BISHOP);
+        if bishops.count_ones() >= 2 {
+            let mut white_square_bishop = false;
+            let mut black_square_bishop = false;
+            let mut bishops = bishops;
+            while bishops > 0 {
+                let bishop_square = bishops.trailing_zeros() as u8;
+                bishops ^= mask(bishop_square);
+
+                let white_square = (bishop_square + (bishop_square / 8)) % 2;
+                if white_square == 1 {
+                    white_square_bishop = true;
+                } else {
+                    black_square_bishop = true;
+                }
+                if white_square_bishop && black_square_bishop {
+                    return true;
+                }
+            }
+            false
+        } else {
+            false
+        }
+    }
+
     /// Parse a UCI Long Algebraic Notation move string, and apply that move to the board.
     pub fn move_from_uci_lan(&mut self, mov: &str) {
         let mut chars = mov.chars();

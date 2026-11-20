@@ -1,6 +1,5 @@
 use crate::move_generation;
-use crate::move_generation::mov::Move;
-use crate::move_generation::mov::piece_type::PAWN;
+use crate::move_generation::mov::{Move, piece_type};
 use crate::move_generation::{Board, Moves, MovesWithMetadata};
 use crate::search_threads::transposition_table::{EntryResult, TranspositionTable};
 use crate::search_threads::{SearchResult, evaluation, print_info};
@@ -252,7 +251,10 @@ impl Search {
         beta: i32,
         color: i32,
     ) -> Option<(i32, u8)> {
-        if board.get_halfmove_clock() > 100 || board.times_played() >= 3 {
+        if board.get_halfmove_clock() > 100
+            || board.times_played() >= 3
+            || !board.sufficient_material_to_force_mate()
+        {
             return Some((0, search_ply));
         }
         self.count_nodes(search_state.nodes_searched);
@@ -560,7 +562,7 @@ impl Search {
                 }
             } else {
                 let capture_type = if mov.flags() == 0b0001 {
-                    Some(PAWN)
+                    Some(piece_type::PAWN)
                 } else {
                     board.get_piece_at_square(mov.ending_index())
                 };
