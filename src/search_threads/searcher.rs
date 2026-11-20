@@ -9,11 +9,13 @@ use std::cmp::{Reverse, max};
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-const MAX_DEPTH: u8 = 32;
+const MAX_DEPTH: u8 = 64;
+const MAX_PLIES: u8 = 128;
 
 pub struct Search {
     pub(crate) nodes_searched: u64,
-    killer_moves: [Option<Move>; MAX_DEPTH as usize],
+    killer_moves: [Option<Move>; MAX_PLIES as usize],
+    singular_exclude_moves: [Option<Move>; MAX_PLIES as usize],
 }
 
 pub struct SearchState<'a> {
@@ -29,7 +31,8 @@ impl Search {
     pub fn new() -> Self {
         Self {
             nodes_searched: 0,
-            killer_moves: [None; MAX_DEPTH as usize],
+            killer_moves: [None; MAX_PLIES as usize],
+            singular_exclude_moves: [None; MAX_PLIES as usize],
         }
     }
 
@@ -49,6 +52,7 @@ impl Search {
     ) -> SearchResult {
         self.nodes_searched = 0;
         self.killer_moves.fill(None);
+        self.singular_exclude_moves.fill(None);
         let legal_moves = move_generation::legal_moves(board);
         if legal_moves.length == 0 {
             panic!(
@@ -251,6 +255,7 @@ impl Search {
         beta: i32,
         color: i32,
     ) -> Option<(i32, u8)> {
+        // Draw by FIDE rules
         if board.get_halfmove_clock() > 100
             || board.times_played() >= 3
             || !board.sufficient_material_to_force_mate()
@@ -263,7 +268,7 @@ impl Search {
         // faster mate elsewhere
         // Same for beta
         let mut alpha = alpha.max(-Self::IMMEDIATE_MATE_SCORE + search_ply as i32);
-        let mut beta = beta.min(Self::IMMEDIATE_MATE_SCORE - search_ply as i32);
+        let beta = beta.min(Self::IMMEDIATE_MATE_SCORE - search_ply as i32);
         if alpha >= beta {
             return Some((alpha, search_ply));
         }
@@ -279,33 +284,7 @@ impl Search {
             };
         }
 
-        let pv_node = search_ply == 0 || beta - alpha > 1;
-
-        let tt_result = search_state
-            .transposition_table
-            .get(board.zobrist_hash, search_ply);
-        let mut tt_move = None;
-        if let Some(tt_result) = tt_result {
-            tt_move = Some(tt_result.best_move);
-            if tt_result.depth >= depth {
-                let non_pv = !pv_node;
-                match tt_result.node_type {
-                    1 if non_pv && tt_result.score <= alpha => {
-                        return Some((tt_result.score, search_ply));
-                    } // Upper bound
-                    0 => return Some((tt_result.score, search_ply)), // Exact
-                    -1 if non_pv && tt_result.score >= beta => {
-                        return Some((tt_result.score, search_ply));
-                    } // Lower bound
-                    _ => {}
-                }
-                if alpha >= beta {
-                    return Some((tt_result.score, search_ply));
-                }
-            }
-        }
-
-        if depth == 0 || search_ply >= MAX_DEPTH {
+        if depth == 0 || search_ply >= MAX_PLIES {
             return self.quiescence(
                 board,
                 search_state,
@@ -317,11 +296,43 @@ impl Search {
             );
         }
 
-        let mut extensions = -1;
-        if moves.length == 1 {
-            extensions += 1;
+        let pv_node = search_ply == 0 || beta - alpha > 1;
+
+        let excluded_move = self.singular_exclude_moves[search_ply as usize];
+
+        let tt_result = search_state
+            .transposition_table
+            .get(board.zobrist_hash, search_ply);
+        let mut tt_move = None;
+        if let Some(tt_result) = tt_result {
+            tt_move = Some(tt_result.best_move);
+            // Don't do TT cutoffs if doing a singular extension scout search
+            if excluded_move.is_none() && tt_result.depth >= depth {
+                let non_pv = !pv_node;
+                match tt_result.node_type {
+                    1 if non_pv && tt_result.score <= alpha => {
+                        return Some((tt_result.score, search_ply));
+                    } // Upper bound
+                    0 => return Some((tt_result.score, search_ply)), // Exact
+                    -1 if non_pv && tt_result.score >= beta => {
+                        return Some((tt_result.score, search_ply));
+                    } // Lower bound
+                    _ => {}
+                }
+            }
         }
-        if moves.check {
+
+        let maybe_singular = tt_result.filter(|tt_result| {
+            excluded_move.is_none()
+                && search_ply > 0
+                && depth > 6
+                && tt_result.depth >= depth - 3
+                && tt_result.node_type != 1
+        });
+
+        let mut extensions = -1;
+        // Single reply extension
+        if moves.length == 1 || moves.check {
             extensions += 1;
         }
         // Internal Iterative Reduction: A move without a TT move is likely to be a bad move.
@@ -346,14 +357,53 @@ impl Search {
                 return None;
             }
             let mov = sorted_moves[i];
+            // Singular verification: search every move except the one being tested.
+            if Some(mov) == excluded_move {
+                continue;
+            }
+
+            let mut move_extension = extensions;
+
+            // Singular extension
+            // If all other moves are worse than the TT move by some margin, extend the move
+            if let Some(tt_result) = maybe_singular
+                && tt_result.best_move == mov
+            {
+                let tt_score = tt_result.score;
+                let singular_beta = tt_score - depth as i32 / 4;
+                let singular_depth = depth / 2;
+
+                // Do a search at this board state but exclude the TT move
+                self.singular_exclude_moves[search_ply as usize] = Some(mov);
+                let score = self.negamax(
+                    board,
+                    search_state,
+                    singular_depth,
+                    search_ply,
+                    singular_beta - 1,
+                    singular_beta,
+                    color,
+                );
+                self.singular_exclude_moves[search_ply as usize] = None;
+                let (score, _) = score?;
+
+                // If this move is singular, extend it
+                if score < singular_beta {
+                    move_extension += 1;
+                }
+                // If this move isn't singular and our margin is better than beta, we already know it's at least
+                // as good as beta
+                else if singular_beta >= beta {
+                    return Some((singular_beta, search_ply));
+                }
+            }
 
             let metadata = board.make_move(&mov);
-
             let search = if i == 0 || depth < 2 {
                 self.negamax(
                     board,
                     search_state,
-                    max(0, depth as i8 + extensions) as u8,
+                    max(0, depth as i8 + move_extension) as u8,
                     search_ply + 1,
                     -beta,
                     -alpha,
@@ -440,11 +490,14 @@ impl Search {
         } else {
             0
         };
-        search_state.transposition_table.insert(
-            board.zobrist_hash,
-            EntryResult::new(depth, best_value, evaluation_type, best_move),
-            search_ply,
-        );
+        // Don't write to TT if doing a singular extension scout search
+        if excluded_move.is_none() {
+            search_state.transposition_table.insert(
+                board.zobrist_hash,
+                EntryResult::new(depth, best_value, evaluation_type, best_move),
+                search_ply,
+            );
+        }
         Some((best_value, best_searched_ply))
     }
 
@@ -477,16 +530,20 @@ impl Search {
             };
         }
 
+        // Evaluate if doing nothing is better
         let static_eval = evaluation::evaluate(board) * color;
+        // If it is, return immediately
         if static_eval >= beta {
             return Some((static_eval, search_ply));
         }
+        // Otherwise, no move that could be made should be worse than doing nothing
         let mut alpha = alpha;
         if static_eval > alpha {
             alpha = static_eval;
         }
         let mut best_value = static_eval;
 
+        // Only search captures
         let moves = moves.filter_captures();
         if moves.length == 0 {
             return Some((best_value, search_ply));
@@ -499,7 +556,9 @@ impl Search {
                 return None;
             }
 
+            // Do static exchange evaluation
             let see = evaluation::static_exchange_evaluation(board, &mov);
+            // If it turns out to be bad, don't search it
             if see < 0 {
                 continue;
             }
