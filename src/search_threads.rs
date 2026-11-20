@@ -44,6 +44,8 @@ struct SharedState {
 
 pub struct Signals {
     pub stop_signal: Arc<AtomicBool>,
+    pub ready_signal: Arc<AtomicBool>,
+    pub main_thread: thread::Thread,
 }
 
 pub struct SearchThreads {
@@ -57,6 +59,7 @@ pub(crate) const DEFAULT_SEARCH_THREADS: usize = 1;
 
 impl SearchThreads {
     pub fn new(signals: &Signals) -> Self {
+        signals.ready_signal.store(false, Ordering::Release);
         // Warm up the LazyLock'd lookups
         move_generation::move_lookup::initialize();
 
@@ -69,6 +72,7 @@ impl SearchThreads {
         };
 
         new.spawn_threads(DEFAULT_SEARCH_THREADS);
+        signals.ready_signal.store(true, Ordering::Release);
         new
     }
 

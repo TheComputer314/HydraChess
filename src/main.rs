@@ -26,13 +26,18 @@ fn main() {
 
     let (cmd_tx, cmd_rx) = channel::<EngineCommand>();
     let stop_signal = Arc::new(AtomicBool::new(false));
+    let ready_signal = Arc::new(AtomicBool::new(true));
 
     let stop_signal_clone = stop_signal.clone();
+    let ready_signal_clone = ready_signal.clone();
+    let main_thread = thread::current();
     let search_thread_handle = thread::spawn(move || {
         search_loop(
             cmd_rx,
             &Signals {
                 stop_signal: stop_signal_clone,
+                ready_signal: ready_signal_clone,
+                main_thread,
             },
         )
     });
@@ -62,6 +67,9 @@ fn main() {
                 out.flush().unwrap();
             }
             "isready" => {
+                while !ready_signal.load(Ordering::Acquire) {
+                    thread::park();
+                }
                 let mut out = stdout.lock();
                 writeln!(out, "readyok").unwrap();
                 out.flush().unwrap();
@@ -178,7 +186,10 @@ fn search_loop(cmd_rx: Receiver<EngineCommand>, signals: &Signals) {
     while let Ok(cmd) = cmd_rx.recv() {
         match cmd {
             EngineCommand::NewGame => {
+                signals.ready_signal.store(false, Ordering::Release);
                 search.new_game();
+                signals.ready_signal.store(true, Ordering::Release);
+                signals.main_thread.unpark();
             }
             EngineCommand::Position { position } => {
                 search.position(&position);
@@ -197,7 +208,10 @@ fn search_loop(cmd_rx: Receiver<EngineCommand>, signals: &Signals) {
                 );
             }
             EngineCommand::SetThreads(threads) => {
+                signals.ready_signal.store(false, Ordering::Release);
                 search.set_threads(threads);
+                signals.ready_signal.store(true, Ordering::Release);
+                signals.main_thread.unpark();
             }
             EngineCommand::Debug => {
                 search.debug();
