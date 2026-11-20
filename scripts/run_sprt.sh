@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Default SPRT parameters
 ELO0=0
-ELO1=1
+ELO1=5
 ALPHA=0.05
 BETA=0.1
 
@@ -17,7 +17,7 @@ Runs SPRT test between HEAD (Latest) and a given commit (Prev).
 Parameters:
   <commit-hash>   Git commit hash to test against (Prev)
   --elo0=X        SPRT elo0 (default: 0)
-  --elo1=Y        SPRT elo1 (default: 1)
+  --elo1=Y        SPRT elo1 (default: 5)
   --alpha=A       SPRT alpha (default: 0.05)
   --beta=B        SPRT beta (default: 0.1)
 
