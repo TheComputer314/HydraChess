@@ -55,7 +55,7 @@ fn main() {
         match command {
             "uci" => {
                 let mut out = stdout.lock();
-                writeln!(out, "id name HydraChessV8").unwrap();
+                writeln!(out, "id name HydraChessV9").unwrap();
                 writeln!(out, "id author Hydra").unwrap();
                 writeln!(
                     out,
