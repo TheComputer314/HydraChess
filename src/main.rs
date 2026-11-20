@@ -26,16 +26,13 @@ fn main() {
 
     let (cmd_tx, cmd_rx) = channel::<EngineCommand>();
     let stop_signal = Arc::new(AtomicBool::new(false));
-    let quit_signal = Arc::new(AtomicBool::new(false));
 
     let stop_signal_clone = stop_signal.clone();
-    let quit_signal_clone = quit_signal.clone();
     let search_thread_handle = thread::spawn(move || {
         search_loop(
             cmd_rx,
             &Signals {
                 stop_signal: stop_signal_clone,
-                quit_signal: quit_signal_clone,
             },
         )
     });
@@ -60,7 +57,7 @@ fn main() {
                     "option name Threads type spin default {} min 1 max 1024",
                     search_threads::DEFAULT_SEARCH_THREADS
                 )
-                    .unwrap();
+                .unwrap();
                 writeln!(out, "uciok").unwrap();
                 out.flush().unwrap();
             }
@@ -78,7 +75,6 @@ fn main() {
             }
             "go" => {
                 stop_signal.store(false, Relaxed);
-                quit_signal.store(false, Relaxed);
                 let (white_time_left_ms, white_increment, black_time_left_ms, black_increment) =
                     if parts.len() < 2 || parts[1] == "infinite" {
                         (u64::MAX, 0, u64::MAX, 0)
@@ -137,7 +133,6 @@ fn main() {
                         // parts[3] == "value"
                         let threads = parts[4].parse::<usize>().unwrap();
                         stop_signal.store(true, Ordering::Relaxed);
-                        quit_signal.store(true, Ordering::Relaxed);
                         cmd_tx.send(EngineCommand::SetThreads(threads)).unwrap();
                     }
                     _ => println!("Unknown option"),
@@ -151,7 +146,6 @@ fn main() {
             }
             "quit" => {
                 stop_signal.store(true, Ordering::Relaxed);
-                quit_signal.store(true, Ordering::Relaxed);
                 cmd_tx.send(EngineCommand::Quit).unwrap();
                 search_thread_handle.join().unwrap();
                 break;

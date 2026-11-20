@@ -31,6 +31,10 @@ struct SharedState {
     increment: AtomicU64,
     start_barrier: Barrier,
     end_barrier: Barrier,
+    // Set only by the coordinator when workers must leave for a resize or shutdown.
+    // This is deliberately separate from UCI signals, which are reset asynchronously
+    // by the input thread and can therefore change while a resize is in progress.
+    quit: AtomicBool,
     root_board: Mutex<Board>,
     // Transposition table is lock-free to allow TT improvements in one thread to improve search_threads in another
     transposition_table: TranspositionTable,
@@ -40,14 +44,12 @@ struct SharedState {
 
 pub struct Signals {
     pub stop_signal: Arc<AtomicBool>,
-    pub quit_signal: Arc<AtomicBool>,
 }
 
 pub struct SearchThreads {
     shared_state: Arc<SharedState>,
     worker_handles: Vec<thread::JoinHandle<()>>,
     stop_signal: Arc<AtomicBool>,
-    quit_signal: Arc<AtomicBool>,
     moves_played: u32,
 }
 
@@ -63,7 +65,6 @@ impl SearchThreads {
             shared_state,
             worker_handles: Vec::new(),
             stop_signal: Arc::clone(&signals.stop_signal),
-            quit_signal: Arc::clone(&signals.quit_signal),
             moves_played: 0,
         };
 
@@ -71,9 +72,10 @@ impl SearchThreads {
         new
     }
 
-    /// Set the number of search threads. Caller must set stop_signal and quit_signal to true before calling.
+    /// Set the number of search threads.
     pub fn set_threads(&mut self, threads: usize) {
-        // Release the current workers from start_barrier so they observe quit_signal and exit.
+        // Tell existing workers to quit, then release them from the start barrier.
+        self.shared_state.quit.store(true, Ordering::Release);
         self.shared_state.start_barrier.wait();
         // Join them: this drops their Arc clones, restoring unique ownership so we can resize.
         for handle in self.worker_handles.drain(..) {
@@ -82,6 +84,7 @@ impl SearchThreads {
 
         let state_mut = Arc::get_mut(&mut self.shared_state)
             .expect("Search threads joined; no other Arc clones should remain");
+        state_mut.quit.store(false, Ordering::Release);
         state_mut.start_barrier = Barrier::new(threads + 1);
         state_mut.end_barrier = Barrier::new(threads + 1);
         state_mut.results = Self::empty_results(threads);
@@ -96,6 +99,7 @@ impl SearchThreads {
             // Coordinator thread is +1
             start_barrier: Barrier::new(search_threads + 1),
             end_barrier: Barrier::new(search_threads + 1),
+            quit: AtomicBool::new(false),
             root_board: Mutex::new(Board::starting()),
             transposition_table: TranspositionTable::new(64),
             results: Self::empty_results(search_threads),
@@ -121,12 +125,11 @@ impl SearchThreads {
         for i in 0..search_threads {
             let state = Arc::clone(&self.shared_state);
             let stop_signal = Arc::clone(&self.stop_signal);
-            let quit_signal = Arc::clone(&self.quit_signal);
             handles.push(thread::spawn(move || {
                 let mut search = Search::new();
                 loop {
                     state.start_barrier.wait();
-                    if quit_signal.load(Ordering::Acquire) {
+                    if state.quit.load(Ordering::Acquire) {
                         break;
                     }
                     sleep(Duration::from_millis((i as u64) * 2));
@@ -147,7 +150,7 @@ impl SearchThreads {
 
                     *state.results[i].lock().unwrap() = result;
                     state.end_barrier.wait();
-                    if quit_signal.load(Ordering::Acquire) {
+                    if state.quit.load(Ordering::Acquire) {
                         break;
                     }
                 }
@@ -244,7 +247,7 @@ impl SearchThreads {
 impl Drop for SearchThreads {
     fn drop(&mut self) {
         // Signal workers to stop, then release them from the start barrier and wait for them.
-        self.quit_signal.store(true, Ordering::Release);
+        self.shared_state.quit.store(true, Ordering::Release);
         self.shared_state.start_barrier.wait();
         for handle in self.worker_handles.drain(..) {
             let _ = handle.join();
