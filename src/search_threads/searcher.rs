@@ -118,18 +118,34 @@ impl Search {
                     let metadata = board.make_move(mov);
 
                     let result = if i == 0 || depth < 2 {
-                        self.negamax(board, search_state, depth, 0, -beta, -alpha, -color)
+                        self.negamax(board, search_state, depth, 0, -beta, -alpha, -color, false)
                     } else {
                         // Moves that aren't the first one probably aren't as good, so do a null window search
                         // to confirm that they're not better than the best move
-                        let mut res =
-                            self.negamax(board, search_state, depth, 0, -alpha - 1, -alpha, -color);
+                        let mut res = self.negamax(
+                            board,
+                            search_state,
+                            depth,
+                            0,
+                            -alpha - 1,
+                            -alpha,
+                            -color,
+                            false,
+                        );
                         if let Some((score, _)) = res
                             && -score > alpha
                             && -score < beta
                         {
-                            res =
-                                self.negamax(board, search_state, depth, 0, -beta, -alpha, -color);
+                            res = self.negamax(
+                                board,
+                                search_state,
+                                depth,
+                                0,
+                                -beta,
+                                -alpha,
+                                -color,
+                                false,
+                            );
                         }
                         res
                     };
@@ -254,6 +270,7 @@ impl Search {
         alpha: i32,
         beta: i32,
         color: i32,
+        cut_node: bool,
     ) -> Option<(i32, u8)> {
         // Draw by FIDE rules
         if board.get_halfmove_clock() > 100
@@ -284,21 +301,14 @@ impl Search {
             };
         }
 
-        if depth == 0 || search_ply >= MAX_PLIES {
-            return self.quiescence(
-                board,
-                search_state,
-                moves,
-                alpha,
-                beta,
-                search_ply + 1,
-                color,
-            );
-        }
+        let excluded_move = if search_ply >= MAX_PLIES {
+            None
+        } else {
+            self.singular_exclude_moves[search_ply as usize]
+        };
 
         let pv_node = search_ply == 0 || beta - alpha > 1;
-
-        let excluded_move = self.singular_exclude_moves[search_ply as usize];
+        let all_node = !(pv_node || cut_node);
 
         let tt_result = search_state
             .transposition_table
@@ -322,6 +332,23 @@ impl Search {
             }
         }
 
+        let static_eval = evaluation::evaluate(board);
+
+        if depth == 0 || search_ply >= MAX_PLIES ||
+            // Razoring: If the eval is *really* bad, just skip and go straight to quiescence search.
+            (all_node && static_eval < alpha - 350 * depth as i32)
+        {
+            return self.quiescence(
+                board,
+                search_state,
+                moves,
+                alpha,
+                beta,
+                search_ply + 1,
+                color,
+            );
+        }
+
         let maybe_singular = tt_result.filter(|tt_result| {
             excluded_move.is_none()
                 && search_ply > 0
@@ -336,7 +363,7 @@ impl Search {
             extensions += 1;
         }
         // Internal Iterative Reduction: A move without a TT move is likely to be a bad move.
-        if !pv_node && depth >= 6 && tt_move.is_none() {
+        if !all_node && depth >= 6 && tt_move.is_none() {
             extensions -= 1;
         }
 
@@ -383,6 +410,7 @@ impl Search {
                     singular_beta - 1,
                     singular_beta,
                     color,
+                    cut_node,
                 );
                 self.singular_exclude_moves[search_ply as usize] = None;
                 let (score, _) = score?;
@@ -396,6 +424,11 @@ impl Search {
                 else if singular_beta >= beta {
                     return Some((singular_beta, search_ply));
                 }
+                // If other moves failed high over the margin, but the margin is less than beta,
+                // It can't be determined if the TT move is singular, so reduce the TT move in favor of other moves
+                else if tt_score >= beta || cut_node {
+                    move_extension = -3;
+                }
             }
 
             let metadata = board.make_move(&mov);
@@ -408,6 +441,9 @@ impl Search {
                     -beta,
                     -alpha,
                     -color,
+                    // If PV node, it's not a cut node
+                    // If all-node, invert cut node
+                    if pv_node { false } else { !cut_node },
                 )
             } else {
                 let full_depth = max(0, depth as i8 + extensions) as u8;
@@ -428,6 +464,7 @@ impl Search {
                     -alpha - 1,
                     -alpha,
                     -color,
+                    true,
                 );
                 // A reduced search beat alpha: verify at full depth, still with a null window
                 if reduced && result.is_some_and(|r| -r.0 > alpha) {
@@ -439,6 +476,7 @@ impl Search {
                         -alpha - 1,
                         -alpha,
                         -color,
+                        !cut_node,
                     );
                 }
                 // Only a move that lands strictly inside (alpha, beta) needs an exact score.
@@ -452,6 +490,7 @@ impl Search {
                         -beta,
                         -alpha,
                         -color,
+                        false,
                     );
                 }
                 result
