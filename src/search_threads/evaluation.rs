@@ -220,6 +220,10 @@ const fn get_passed_pawn_mask(square: u8, white: bool) -> u64 {
 }
 
 pub(crate) fn evaluate(board: &Board) -> i32 {
+    if !board.can_force_mate(true) && !board.can_force_mate(false) {
+        return 0;
+    }
+
     let mut score = 0;
     let pieces_left = board.white.count_ones() + board.black.count_ones();
 
@@ -271,7 +275,8 @@ pub(crate) fn evaluate(board: &Board) -> i32 {
             }
         }
     }
-    score
+
+    score + 200 * (board.can_force_mate(true) as i32 - board.can_force_mate(false) as i32)
 }
 
 fn get_value(piece_type: usize, square: usize, pieces_left: u32) -> i32 {

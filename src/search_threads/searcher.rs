@@ -2,7 +2,7 @@ use crate::move_generation;
 use crate::move_generation::mov::{Move, piece_type};
 use crate::move_generation::{Board, Moves, MovesWithMetadata};
 use crate::search_threads::transposition_table::{EntryResult, TranspositionTable};
-use crate::search_threads::{SearchResult, evaluation, print_info};
+use crate::search_threads::{SearchResult, evaluation, is_mate_score, print_info};
 use minstant::Instant;
 use rand::seq::SliceRandom;
 use std::cmp::{Reverse, max};
@@ -90,6 +90,8 @@ impl Search {
         let mut last_best_move = Move::null();
         let mut last_print_time = search_state.timer.elapsed().as_secs_f64();
 
+        let mut mate_finding = false;
+
         // Iterative deepening: Information from previous searches can make the next search faster, so searching the
         // same position over and over with increasing depth is faster than doing a fixed depth search
         'iterative_deepening: for depth in 0..MAX_DEPTH {
@@ -127,7 +129,17 @@ impl Search {
 
                     // The first move is likely to be the best move, so do a full search
                     let result = if i == 0 || depth < 2 {
-                        self.negamax(board, search_state, depth, 0, -beta, -alpha, -color, false)
+                        self.negamax(
+                            board,
+                            search_state,
+                            depth,
+                            0,
+                            -beta,
+                            -alpha,
+                            -color,
+                            false,
+                            mate_finding,
+                        )
                     } else {
                         // Moves that aren't the first one probably aren't as good, so do a null window search
                         // to confirm that they're not better than the best move
@@ -140,6 +152,7 @@ impl Search {
                             -alpha,
                             -color,
                             false,
+                            mate_finding,
                         );
                         if let Some((score, _)) = res
                             && -score > alpha
@@ -155,6 +168,7 @@ impl Search {
                                 -alpha,
                                 -color,
                                 false,
+                                mate_finding,
                             );
                         }
                         res
@@ -258,6 +272,10 @@ impl Search {
             {
                 break 'iterative_deepening;
             }
+
+            if !mate_finding && is_mate_score(best_score) {
+                mate_finding = true;
+            }
         }
 
         // self.count_nodes only adds to the global total mod 2047, so the remainder is added after the search
@@ -285,6 +303,7 @@ impl Search {
         beta: i32,
         color: i32,
         cut_node: bool,
+        mate_finding: bool,
     ) -> Option<(i32, u8)> {
         // Draw by FIDE rules
         if board.get_halfmove_clock() >= 100
@@ -351,7 +370,7 @@ impl Search {
         // If at max depth or max plies, start the quiescence search
         if depth == 0 || search_ply >= MAX_PLIES ||
             // Razoring: If the eval is *really* bad, just skip and go straight to quiescence search.
-            (all_node && static_eval < alpha - 350 * depth as i32)
+            (!mate_finding && all_node && static_eval < alpha - 350 * depth as i32)
         {
             return self.quiescence(
                 board,
@@ -426,6 +445,7 @@ impl Search {
                     singular_beta,
                     color,
                     cut_node,
+                    mate_finding,
                 );
                 self.singular_exclude_moves[search_ply as usize] = None;
                 let (score, _) = score?;
@@ -459,6 +479,7 @@ impl Search {
                     // If PV node, it's not a cut node
                     // If all-node, invert cut node
                     if pv_node { false } else { !cut_node },
+                    mate_finding,
                 )
             } else {
                 let full_depth = max(0, depth as i8 + extensions) as u8;
@@ -480,6 +501,7 @@ impl Search {
                     -alpha,
                     -color,
                     true,
+                    mate_finding,
                 );
                 // A reduced search beat alpha: verify at full depth, still with a null window
                 if reduced && result.is_some_and(|r| -r.0 > alpha) {
@@ -492,6 +514,7 @@ impl Search {
                         -alpha,
                         -color,
                         !cut_node,
+                        mate_finding,
                     );
                 }
                 // Only a move that lands strictly inside (alpha, beta) needs an exact score.
@@ -506,6 +529,7 @@ impl Search {
                         -alpha,
                         -color,
                         false,
+                        mate_finding,
                     );
                 }
                 result
