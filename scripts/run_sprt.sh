@@ -91,10 +91,10 @@ fastchess \
     -engine cmd="$PREV_BIN" name=HydraChessPrev \
     -each tc=10+0.1 \
     -openings file="$OPENINGS_FILE" format=pgn order=random \
-    -rounds 10000 -repeat \
+    -rounds 40000 -repeat \
     -ratinginterval 5 \
     -sprt elo0=$ELO0 elo1=$ELO1 alpha=$ALPHA beta=$BETA \
     -report penta=true \
-    -concurrency 12
+    -concurrency 20
 
 echo "=== SPRT test complete ==="
