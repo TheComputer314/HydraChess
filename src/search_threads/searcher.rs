@@ -64,7 +64,7 @@ impl Search {
             return SearchResult {
                 depth: 0,
                 best_ply: 0,
-                score: 0,
+                score: evaluation::evaluate(board),
                 best_move: legal_moves.moves[0],
             };
         }
@@ -90,18 +90,26 @@ impl Search {
         let mut last_best_move = Move::null();
         let mut last_print_time = search_state.timer.elapsed().as_secs_f64();
 
+        // Iterative deepening: Information from previous searches can make the next search faster, so searching the
+        // same position over and over with increasing depth is faster than doing a fixed depth search
         'iterative_deepening: for depth in 0..MAX_DEPTH {
+            // Sort moves by evaluation from previous search
             if depth > 0 {
                 sorted_moves.sort_by_key(|&(_, eval)| Reverse(eval));
                 if search_id > 0 {
+                    // Shuffle moves if not on main thread to encourage exploration of different lines
                     sorted_moves[1..].shuffle(&mut rand::rng());
                 }
             }
 
             let mut delta = 50;
+            // On shallow depths, use a full window since the previous depth's evaluation is
+            // likely to be too unstable
             let (mut alpha, mut beta) = if depth <= 4 {
                 (-i32::MAX, i32::MAX)
             } else {
+                // The evaluation with this current depth is likely
+                // to be close to the evaluation from the previous depth
                 (
                     best_score.saturating_sub(delta).max(-i32::MAX),
                     best_score.saturating_add(delta),
@@ -117,6 +125,7 @@ impl Search {
                     let (mov, sort_eval) = &mut sorted_moves[i];
                     let metadata = board.make_move(mov);
 
+                    // The first move is likely to be the best move, so do a full search
                     let result = if i == 0 || depth < 2 {
                         self.negamax(board, search_state, depth, 0, -beta, -alpha, -color, false)
                     } else {
@@ -136,6 +145,7 @@ impl Search {
                             && -score > alpha
                             && -score < beta
                         {
+                            // If it's worth looking at, do a full search
                             res = self.negamax(
                                 board,
                                 search_state,
@@ -162,11 +172,14 @@ impl Search {
 
                     board.unmake_move(mov, metadata);
 
+                    // Update best move
                     if eval > depth_best_score {
                         depth_best_score = eval;
                         depth_best_move = *mov;
                         depth_best_ply = searched_ply;
                     }
+                    // Update alpha
+                    // Moves must be at least as good as the best score we've seen so far
                     if eval > alpha {
                         alpha = eval;
                     }
@@ -193,9 +206,8 @@ impl Search {
                     }
                 }
 
-                // Check if the root search failed outside our aspiration window
+                // Check if root search failed outside the aspiration window
                 if depth_best_score <= alpha_start {
-                    // (save original alpha before loop!)
                     // Fail-low: widen alpha downward and re-search
                     alpha = depth_best_score.saturating_sub(delta).max(-i32::MAX);
                     alpha_start = alpha;
@@ -207,13 +219,13 @@ impl Search {
                 } else if depth_best_score >= beta {
                     // Fail-high: widen beta upward and re-search
                     beta = depth_best_score.saturating_add(delta);
-                    alpha = alpha_start; // Reset alpha to start of window
+                    alpha = alpha_start; // Reset alpha
                     delta *= 2;
                     if delta > 500 {
                         beta = i32::MAX;
                     }
                 } else {
-                    // Exact score found
+                    // Exact score found, break
                     best_score = depth_best_score;
                     best_move = depth_best_move;
                     best_depth = depth;
@@ -221,12 +233,13 @@ impl Search {
                     break 'aspiration;
                 }
             }
-            // We've reached the maximum depth, any further search is meaningless so exit early
+            // We've reached the maximum depth, any further search is meaningless, so exit all threads early
             if depth + 1 == MAX_DEPTH {
                 search_state.stop_signal.store(true, Ordering::Relaxed);
                 break 'iterative_deepening;
             }
 
+            // If the best move stayed the same, we don't need to spend that much more time on it
             let mult;
             if best_move == last_best_move {
                 stability += 1;
@@ -236,7 +249,7 @@ impl Search {
                 last_best_move = best_move;
                 mult = 1.5;
             }
-
+            // So progressively shrink the soft time limit as stability increases
             const MULTIPLIERS: [f64; 7] = [2.0, 1.5, 1.2, 1.0, 0.8, 0.75, 0.5];
             let time_mult = MULTIPLIERS[stability.min(6) as usize] * mult;
             if search_state.timer.elapsed().as_millis() as f64
@@ -247,6 +260,7 @@ impl Search {
             }
         }
 
+        // self.count_nodes only adds to the global total mod 2047, so the remainder is added after the search
         search_state
             .nodes_searched
             .fetch_add(self.nodes_searched % 2047, Ordering::Relaxed);
@@ -273,7 +287,7 @@ impl Search {
         cut_node: bool,
     ) -> Option<(i32, u8)> {
         // Draw by FIDE rules
-        if board.get_halfmove_clock() > 100
+        if board.get_halfmove_clock() >= 100
             || board.times_played() >= 3
             || !board.sufficient_material_to_force_mate()
         {
@@ -334,6 +348,7 @@ impl Search {
 
         let static_eval = evaluation::evaluate(board);
 
+        // If at max depth or max plies, start the quiescence search
         if depth == 0 || search_ply >= MAX_PLIES ||
             // Razoring: If the eval is *really* bad, just skip and go straight to quiescence search.
             (all_node && static_eval < alpha - 350 * depth as i32)
@@ -512,25 +527,25 @@ impl Search {
             }
             if value > alpha {
                 alpha = value;
-                // Only trust moves that actually raised alpha. In fail-low nodes every child score
-                // is just an upper bound, so storing those in TT poisons the move ordering.
                 best_move = mov;
                 if alpha >= beta {
+                    // If a move is so good it causes a beta cutoff, then it should be given
+                    // priority in move ordering
                     self.killer_moves[search_ply as usize] = Some(mov);
                     break;
                 }
             }
         }
 
-        let evaluation_type = if best_value <= alpha_original {
-            1
-        } else if best_value >= beta {
-            -1
-        } else {
-            0
-        };
         // Don't write to TT if doing a singular extension scout search
         if excluded_move.is_none() {
+            let evaluation_type = if best_value <= alpha_original {
+                1
+            } else if best_value >= beta {
+                -1
+            } else {
+                0
+            };
             search_state.transposition_table.insert(
                 board.zobrist_hash,
                 EntryResult::new(depth, best_value, evaluation_type, best_move),
@@ -555,7 +570,11 @@ impl Search {
             return None;
         }
 
-        if board.get_halfmove_clock() > 100 || board.times_played() >= 3 {
+        // Draw by FIDE rules
+        if board.get_halfmove_clock() >= 100
+            || board.times_played() >= 3
+            || !board.sufficient_material_to_force_mate()
+        {
             return Some((0, search_ply));
         }
 
@@ -576,10 +595,7 @@ impl Search {
             return Some((static_eval, search_ply));
         }
         // Otherwise, no move that could be made should be worse than doing nothing
-        let mut alpha = alpha;
-        if static_eval > alpha {
-            alpha = static_eval;
-        }
+        let mut alpha = alpha.max(static_eval);
         let mut best_value = static_eval;
 
         // Only search captures
@@ -648,17 +664,19 @@ impl Search {
             if let Some(tt_move) = tt_move
                 && tt_move.eq(mov)
             {
+                // Moves previously evaluated to be the best in the TT are placed first
                 value = 1 << 20;
             } else if let Some(killer_move) = killer_move
                 && killer_move.eq(mov)
             {
                 if mov.flags() != 0b0001 && board.get_piece_at_square(mov.ending_index()).is_none()
                 {
-                    value = 10_000; // If killer move is quiet, score below captures but above normal quiets
+                    value = 10_000; // If killer move is non-capturing, score below captures but above normal quiets
                 } else {
                     value = 1 << 19; // If capture, score below TT best move but above everything else
                 }
             } else {
+                // En passant moves don't have the captured piece at the end square, so special case it
                 let capture_type = if mov.flags() == 0b0001 {
                     Some(piece_type::PAWN)
                 } else {
@@ -691,6 +709,7 @@ impl Search {
 
     fn count_nodes(&mut self, nodes_searched: &AtomicU64) {
         self.nodes_searched += 1;
+        // Only add to global counter every 2048 nodes to reduce contention
         if self.nodes_searched % 2047 == 0 {
             nodes_searched.fetch_add(2048, Ordering::Relaxed);
         }
