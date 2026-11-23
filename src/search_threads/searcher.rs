@@ -289,7 +289,7 @@ impl Search {
         // Draw by FIDE rules
         if board.get_halfmove_clock() >= 100
             || board.times_played() >= 3
-            || !board.sufficient_material_to_force_mate()
+            || board.draw_by_insufficient_material()
         {
             return Some((0, search_ply));
         }
@@ -573,7 +573,7 @@ impl Search {
         // Draw by FIDE rules
         if board.get_halfmove_clock() >= 100
             || board.times_played() >= 3
-            || !board.sufficient_material_to_force_mate()
+            || board.draw_by_insufficient_material()
         {
             return Some((0, search_ply));
         }

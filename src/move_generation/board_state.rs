@@ -399,34 +399,69 @@ impl Board {
             .count()
     }
 
-    pub fn sufficient_material_to_force_mate(&self) -> bool {
-        let white_queen_count = self.get_bitboard(true, piece_type::QUEEN).count_ones();
-        let black_queen_count = self.get_bitboard(false, piece_type::QUEEN).count_ones();
-        let white_rook_count = self.get_bitboard(true, piece_type::ROOK).count_ones();
-        let black_rook_count = self.get_bitboard(false, piece_type::ROOK).count_ones();
-        let white_bishop_count = self.get_bitboard(true, piece_type::BISHOP).count_ones();
-        let black_bishop_count = self.get_bitboard(false, piece_type::BISHOP).count_ones();
-        let white_knight_count = self.get_bitboard(true, piece_type::KNIGHT).count_ones();
-        let black_knight_count = self.get_bitboard(false, piece_type::KNIGHT).count_ones();
+    /// Returns if the board has sufficient material to force mate.
+    ///
+    /// This follows FIDE rules, where any sequence of legal moves can force mate.
+    /// This differs from USCF rules, where the opponent throwing the match is not considered.
+    pub fn draw_by_insufficient_material(&self) -> bool {
+        // Queens, rooks, and pawns alone can force mate.
+        if self.queens > 0 || self.rooks > 0 || self.pawns > 0 {
+            return false;
+        }
 
-        let white_pawn_count = self.get_bitboard(true, piece_type::PAWN).count_ones();
-        let black_pawn_count = self.get_bitboard(false, piece_type::PAWN).count_ones();
+        // King vs. King
+        if self.bishops == 0 && self.knights == 0 {
+            return true;
+        }
+        // King/Bishop vs. King
+        if self.bishops.count_ones() == 1 && self.knights == 0 {
+            return true;
+        }
+        // King/Knight vs. King
+        if self.knights.count_ones() == 1 && self.bishops == 0 {
+            return true;
+        }
+        // King/Bishop vs. King/Bishop
+        if (self.white & self.bishops).count_ones() == 1
+            && (self.black & self.bishops).count_ones() == 1
+            && self.knights == 0
+        {
+            // If the bishops are on the same color, then draw
+            // If they are on different colors, then mate is only possible through throwing
+            let white_bishop_square = (self.white & self.bishops).trailing_zeros() as u8;
+            let black_bishop_square = (self.black & self.bishops).trailing_zeros() as u8;
 
-        let white_bishop_pair = self.has_bishop_pair(true);
-        let black_bishop_pair = self.has_bishop_pair(false);
+            if Self::is_white_square(white_bishop_square)
+                == Self::is_white_square(black_bishop_square)
+            {
+                return true;
+            }
+        }
 
-        white_queen_count > 0
-            || black_queen_count > 0
-            || white_rook_count > 0
-            || black_rook_count > 0
-            || white_pawn_count > 0
-            || black_pawn_count > 0
-            || white_bishop_pair
-            || black_bishop_pair
-            || (white_bishop_count > 0 && white_knight_count > 0)
-            || (black_bishop_count > 0 && black_knight_count > 0)
-            || white_knight_count >= 3
-            || black_knight_count >= 3
+        false
+    }
+
+    /// Returns if a side has enough material to force mate.
+    ///
+    /// Note: This is different from the insufficient material rule in FIDE regulations.
+    /// FIDE regulations assume that any legal sequence of moves can force mate, which includes positions
+    /// where the opponent threw the match.
+    /// But in search, we assume that the opponent isn't throwing.
+    pub fn can_force_mate(&self, white: bool) -> bool {
+        let queens = self.get_bitboard(white, piece_type::QUEEN);
+        let rook = self.get_bitboard(white, piece_type::ROOK);
+        let bishops = self.get_bitboard(white, piece_type::BISHOP);
+        let knights = self.get_bitboard(white, piece_type::KNIGHT);
+        let pawns = self.get_bitboard(white, piece_type::PAWN);
+
+        let bishop_pair = self.has_bishop_pair(white);
+
+        queens > 0
+            || rook > 0
+            || pawns > 0
+            || bishop_pair
+            || (bishops > 0 && knights > 0)
+            || knights.count_ones() >= 3
     }
 
     pub fn has_bishop_pair(&self, white: bool) -> bool {
@@ -439,8 +474,7 @@ impl Board {
                 let bishop_square = bishops.trailing_zeros() as u8;
                 bishops ^= mask(bishop_square);
 
-                let white_square = (bishop_square + (bishop_square / 8)) % 2;
-                if white_square == 1 {
+                if Self::is_white_square(bishop_square) {
                     white_square_bishop = true;
                 } else {
                     black_square_bishop = true;
@@ -453,6 +487,10 @@ impl Board {
         } else {
             false
         }
+    }
+
+    fn is_white_square(square: u8) -> bool {
+        (square + (square / 8)) % 2 == 1
     }
 
     /// Parse a UCI Long Algebraic Notation move string, and apply that move to the board.

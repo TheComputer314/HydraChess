@@ -222,12 +222,14 @@ const fn get_passed_pawn_mask(square: u8, white: bool) -> u64 {
 pub(crate) fn evaluate(board: &Board) -> i32 {
     let mut score = 0;
     let pieces_left = board.white.count_ones() + board.black.count_ones();
+
     for square in 0..64 {
         let mask = mask(square);
         if mask & board.all_pieces() == 0 {
             continue;
         }
         let white = mask & board.white != 0;
+
         let color_mult = if white { 1 } else { -1 };
         let piece_square_lookup = if white {
             square as usize
