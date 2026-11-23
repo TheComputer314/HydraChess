@@ -365,7 +365,7 @@ impl Search {
             }
         }
 
-        let static_eval = evaluation::evaluate(board);
+        let static_eval = evaluation::evaluate(board) * color;
 
         // If at max depth or max plies, start the quiescence search
         if depth == 0 || search_ply >= MAX_PLIES ||
