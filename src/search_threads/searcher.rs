@@ -367,6 +367,18 @@ impl Search {
 
         let static_eval = evaluation::evaluate(board) * color;
 
+        // Reverse futility pruning: If the static eval is *really* good, just skip searching since
+        // any possible move is unlikely to fall below beta.
+        if !mate_finding
+            && excluded_move.is_none()
+            && !pv_node
+            && !moves.check
+            && depth <= 8
+            && static_eval >= beta + 150 * depth as i32
+        {
+            return Some((static_eval, search_ply));
+        }
+
         // If at max depth or max plies, start the quiescence search
         if depth == 0 || search_ply >= MAX_PLIES ||
             // Razoring: If the eval is *really* bad, just skip and go straight to quiescence search.
