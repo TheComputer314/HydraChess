@@ -135,6 +135,10 @@ impl Move {
     pub fn capture(&self) -> bool {
         self.data >> 15 == 1
     }
+    
+    pub fn is_null(&self) -> bool {
+        self.data == 0
+    }
 }
 
 pub mod piece_type {

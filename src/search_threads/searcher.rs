@@ -404,6 +404,44 @@ impl Search {
                 && tt_result.node_type != 1
         });
 
+        if cut_node
+            && !in_check
+            && !mate_finding
+            && excluded_move.is_none()
+            && static_eval >= beta + 100 * depth as i32
+            && search_ply > 5
+            && depth >= 3
+            // Require at least a couple of non-pawn pieces
+            && (board.all_pieces() & !board.kings & !board.pawns).count_ones() > 2
+        {
+            // Stolen from Reckless
+            // TODO: Tune
+            let reduction = ((2048
+                + 265 * depth as u32
+                + 477 * (static_eval - beta).clamp(0, 1187) as u32 / 128)
+                / 1024) as u8;
+
+            let metadata = board.make_move(&Move::null());
+            let result = self.negamax(
+                board,
+                search_state,
+                depth.saturating_sub(reduction),
+                search_ply + 1,
+                -beta - 1,
+                -beta,
+                -color,
+                false,
+                mate_finding,
+            );
+            board.unmake_move(&Move::null(), metadata);
+            let (eval, _) = result?;
+            let eval = -eval;
+
+            if eval >= beta {
+                return Some((eval, search_ply));
+            }
+        }
+
         let mut extensions = -1;
         // Single reply extension
         if moves.length == 1 || moves.check {

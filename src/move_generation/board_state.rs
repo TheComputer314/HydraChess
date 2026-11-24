@@ -623,12 +623,21 @@ impl Board {
     pub fn make_move(&mut self, mov: &Move) -> (u8, u16, u64, Option<u8>) {
         let last_halfmove_clock = self.halfmove_clock;
         let last_zobrist_hash = self.zobrist_hash;
+        // Handle null moves
+        if mov.is_null() {
+            return (
+                last_halfmove_clock,
+                self.make_null_move(),
+                last_zobrist_hash,
+                None,
+            );
+        }
         // Handle special moves
         match mov.flags() {
             0b0001 => {
                 return (
                     last_halfmove_clock,
-                    self.make_en_passant(&mov),
+                    self.make_en_passant(mov),
                     last_zobrist_hash,
                     Some(piece_type::PAWN),
                 );
@@ -636,7 +645,7 @@ impl Board {
             0b0010 => {
                 return (
                     last_halfmove_clock,
-                    self.make_castle(&mov),
+                    self.make_castle(mov),
                     last_zobrist_hash,
                     None,
                 );
@@ -644,7 +653,7 @@ impl Board {
             0b0011 => {
                 return (
                     last_halfmove_clock,
-                    self.make_double_pawn_push(&mov),
+                    self.make_double_pawn_push(mov),
                     last_zobrist_hash,
                     None,
                 );
@@ -918,11 +927,17 @@ impl Board {
     ///
     /// Takes the last flag and the captured piece type as input.
     pub fn unmake_move(&mut self, mov: &Move, metadata: (u8, u16, u64, Option<u8>)) {
-        self.repetition_table.pop();
         let (last_halfmove_clock, last_flags, last_zobrist_hash, capture) = metadata;
         self.halfmove_clock = last_halfmove_clock;
         self.zobrist_hash = last_zobrist_hash;
         self.flags = last_flags;
+        // Handle null moves
+        if mov.is_null() {
+            return;
+        }
+        // Pop after handling null moves, since a null move doesn't push anything
+        self.repetition_table.pop();
+        // Handle special moves
         match mov.flags() {
             0b0001 => return self.unmake_en_passant(mov),
             0b0010 => return self.unmake_castle(mov),
@@ -1312,6 +1327,24 @@ impl Board {
             self.black |= king_start_mask | rook_start_mask;
             self.black &= !(king_end_mask | rook_end_mask);
         }
+    }
+
+    fn make_null_move(&mut self) -> u16 {
+        let flags = self.flags;
+
+        // Toggle off en passant target
+        if let Some(target) = self.en_passant_target() {
+            self.zobrist_hash ^= self.zobrist_numbers.en_passant_target
+                [if self.white_to_move() { 1 } else { 0 }][(target % 8) as usize];
+        }
+
+        // Toggle white to move
+        self.flags ^= 1 << 4;
+        self.zobrist_hash ^= self.zobrist_numbers.white_to_move;
+        // Clear en passant flags
+        self.flags &= !(0b11111 << 5);
+
+        flags
     }
 }
 
