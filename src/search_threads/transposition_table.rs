@@ -8,17 +8,17 @@ struct Entry {
     data: AtomicU64,
 }
 
-fn score_to_tt(score: i32, search_plies: u8) -> i32 {
+fn score_to_tt(score: i16, search_plies: u8) -> i16 {
     if is_mate_score(score) {
-        score + (search_plies as i32) * score.signum()
+        score + (search_plies as i16) * score.signum()
     } else {
         score
     }
 }
 
-fn tt_to_score(score: i32, search_plies: u8) -> i32 {
+fn tt_to_score(score: i16, search_plies: u8) -> i16 {
     if is_mate_score(score) {
-        score - (search_plies as i32) * score.signum()
+        score - (search_plies as i16) * score.signum()
     } else {
         score
     }
@@ -27,7 +27,8 @@ fn tt_to_score(score: i32, search_plies: u8) -> i32 {
 impl Entry {
     fn data_from_entry_result(entry_result: EntryResult, search_plies: u8) -> u64 {
         entry_result.best_move.data as u64
-            | (((score_to_tt(entry_result.score, search_plies) as u64) & 0xFFFFFFFF) << 16)
+            | ((score_to_tt(entry_result.search_score, search_plies) as u16 as u64) << 16)
+            | ((score_to_tt(entry_result.static_score, search_plies) as u16 as u64) << 32)
             | (entry_result.depth as u64) << (16 + 32)
             | (entry_result.node_type as u64) << (16 + 32 + 8)
     }
@@ -35,16 +36,24 @@ impl Entry {
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct EntryResult {
-    pub score: i32,
+    pub search_score: i16,
+    pub static_score: i16,
     pub depth: u8,
     pub node_type: i8,
     pub best_move: Move,
 }
 
 impl EntryResult {
-    pub fn new(depth: u8, score: i32, node_type: i8, best_move: Move) -> Self {
+    pub fn new(
+        depth: u8,
+        search_score: i16,
+        static_score: i16,
+        node_type: i8,
+        best_move: Move,
+    ) -> Self {
         Self {
-            score,
+            search_score,
+            static_score,
             depth,
             node_type,
             best_move,
@@ -54,7 +63,8 @@ impl EntryResult {
     fn from_u64(data: u64, search_plies: u8) -> Self {
         Self {
             best_move: Move { data: data as u16 },
-            score: tt_to_score((data >> 16) as i32, search_plies),
+            search_score: tt_to_score((data >> 16) as i16, search_plies),
+            static_score: tt_to_score((data >> 32) as i16, search_plies),
             depth: (data >> 48) as u8,
             node_type: (data >> 56) as i8,
         }
@@ -123,17 +133,28 @@ impl TranspositionTable {
 #[cfg(test)]
 mod tests {
     use crate::move_generation::mov::Move;
+    use crate::search_threads::searcher::{MAX_PLIES, Search};
     use crate::search_threads::transposition_table::{EntryResult, TranspositionTable};
 
     #[test]
     fn test_load_unload() {
+        let table = TranspositionTable::new(1);
         let entry_result = EntryResult {
             best_move: Move::left_en_passant(10),
-            score: 10,
+            search_score: 10,
+            static_score: 5,
             depth: 4,
             node_type: 0,
         };
-        let table = TranspositionTable::new(1);
+        table.insert(0, entry_result, 0);
+        assert_eq!(table.get(0, 0), Some(entry_result));
+        let entry_result = EntryResult {
+            best_move: Move::left_en_passant(10),
+            search_score: -10,
+            static_score: -5,
+            depth: 4,
+            node_type: 0,
+        };
         table.insert(0, entry_result, 0);
         assert_eq!(table.get(0, 0), Some(entry_result));
     }
@@ -141,8 +162,8 @@ mod tests {
     #[test]
     fn deeper_entry_is_not_replaced_by_shallower_entry() {
         let table = TranspositionTable::new(1);
-        let deep = EntryResult::new(8, 100, 0, Move::left_en_passant(10));
-        let shallow = EntryResult::new(4, -100, 1, Move::null());
+        let deep = EntryResult::new(8, 100, 100, 0, Move::left_en_passant(10));
+        let shallow = EntryResult::new(4, -100, -100, 1, Move::null());
 
         table.insert(0, deep, 0);
         table.insert(0, shallow, 0);
@@ -151,10 +172,21 @@ mod tests {
     }
 
     #[test]
+    fn mate_scores_round_trip_at_max_search_ply() {
+        let table = TranspositionTable::new(1);
+        for sign in [1, -1] {
+            let score = (Search::IMMEDIATE_MATE_SCORE - 1) * sign;
+            let entry = EntryResult::new(1, score, 0, 0, Move::null());
+            table.insert(0, entry, MAX_PLIES);
+            assert_eq!(table.get(0, MAX_PLIES), Some(entry));
+        }
+    }
+
+    #[test]
     fn equal_depth_entry_replaces_existing_entry() {
         let table = TranspositionTable::new(1);
-        let bound = EntryResult::new(6, 50, 1, Move::null());
-        let exact = EntryResult::new(6, 42, 0, Move::left_en_passant(10));
+        let bound = EntryResult::new(6, 50, 50, 1, Move::null());
+        let exact = EntryResult::new(6, 42, 50, 0, Move::left_en_passant(10));
 
         table.insert(0, bound, 0);
         table.insert(0, exact, 0);

@@ -21,7 +21,7 @@ use std::time::Duration;
 struct SearchResult {
     depth: u8,
     best_ply: u8,
-    score: i32,
+    score: i16,
     best_move: Move,
     // pv: Vec<Move>, // TODO
 }
@@ -259,11 +259,11 @@ impl Drop for SearchThreads {
     }
 }
 
-fn is_mate_score(score: i32) -> bool {
-    score.abs() > Search::IMMEDIATE_MATE_SCORE - 100000
+fn is_mate_score(score: i16) -> bool {
+    score.abs() >= Search::IMMEDIATE_MATE_SCORE - (searcher::MAX_PLIES as i16)
 }
 
-fn print_info(depth: u8, depth_best_ply: u8, score: i32, time: f64, nodes: u64) {
+fn print_info(depth: u8, depth_best_ply: u8, score: i16, time: f64, nodes: u64) {
     let mut out = stdout().lock();
     if is_mate_score(score) {
         let mate_in_ply = Search::IMMEDIATE_MATE_SCORE - score.abs();

@@ -23,10 +23,10 @@ macro_rules! piece_square_table {
     };
 }
 
-const OPENING_PIECE_VALUES: [i32; 6] = [82, 337, 365, 477, 1025, 0];
-const ENDGAME_PIECE_VALUES: [i32; 6] = [94, 281, 297, 512, 936, 0];
+const OPENING_PIECE_VALUES: [i16; 6] = [82, 337, 365, 477, 1025, 0];
+const ENDGAME_PIECE_VALUES: [i16; 6] = [94, 281, 297, 512, 936, 0];
 
-const OPENING_SQUARE_VALUES: [[i32; 64]; 6] = [
+const OPENING_SQUARE_VALUES: [[i16; 64]; 6] = [
     piece_square_table!(
           0,   0,   0,   0,   0,   0,  0,   0;
          98, 134,  61,  95,  68, 126, 34, -11;
@@ -89,7 +89,7 @@ const OPENING_SQUARE_VALUES: [[i32; 64]; 6] = [
     ),
 ];
 
-const ENDGAME_SQUARE_VALUES: [[i32; 64]; 6] = [
+const ENDGAME_SQUARE_VALUES: [[i16; 64]; 6] = [
     piece_square_table!(
         0,   0,   0,   0,   0,   0,   0,   0;
       178, 173, 158, 134, 147, 132, 165, 187;
@@ -219,7 +219,7 @@ const fn get_passed_pawn_mask(square: u8, white: bool) -> u64 {
     PASSED_PAWN_MASK[white as usize][(relative_square - 8) as usize]
 }
 
-pub(crate) fn evaluate(board: &Board) -> i32 {
+pub(crate) fn evaluate(board: &Board) -> i16 {
     if !board.can_force_mate(true) && !board.can_force_mate(false) {
         return 0;
     }
@@ -266,7 +266,7 @@ pub(crate) fn evaluate(board: &Board) -> i32 {
             if get_doubled_pawn_mask(square, white) & friendly_pawns != 0 {
                 score -= 20 * color_mult;
             } else {
-                let rank = if white { square / 8 } else { 7 - (square / 8) } as i32;
+                let rank = if white { square / 8 } else { 7 - (square / 8) } as i16;
                 let passed_pawn_mask = get_passed_pawn_mask(square, white);
                 // Reward passed pawns, with the reward going up as the pawn gets further up the board
                 if passed_pawn_mask & enemy_pawns == 0 {
@@ -276,10 +276,10 @@ pub(crate) fn evaluate(board: &Board) -> i32 {
         }
     }
 
-    score + 200 * (board.can_force_mate(true) as i32 - board.can_force_mate(false) as i32)
+    score + 200 * (board.can_force_mate(true) as i16 - board.can_force_mate(false) as i16)
 }
 
-fn get_value(piece_type: usize, square: usize, pieces_left: u32) -> i32 {
+fn get_value(piece_type: usize, square: usize, pieces_left: u32) -> i16 {
     lerp_value(
         OPENING_PIECE_VALUES[piece_type] + OPENING_SQUARE_VALUES[piece_type][square],
         ENDGAME_PIECE_VALUES[piece_type] + ENDGAME_SQUARE_VALUES[piece_type][square],
@@ -287,21 +287,21 @@ fn get_value(piece_type: usize, square: usize, pieces_left: u32) -> i32 {
     )
 }
 
-fn lerp_value(opening: i32, endgame: i32, pieces_left: u32) -> i32 {
+fn lerp_value(opening: i16, endgame: i16, pieces_left: u32) -> i16 {
     let a = opening;
     let b = endgame;
     // Remove kings from count
-    let t = pieces_left as i32 - 2;
+    let t = pieces_left as i16 - 2;
     (a * t + b * (30 - t)) / 30
 }
 
-const PIECE_VALUES: [i32; 6] = [100, 220, 430, 600, 1000, 20_000];
+const PIECE_VALUES: [i16; 6] = [100, 220, 430, 600, 1000, 20_000];
 
-pub fn mvv_lva(attacker: usize, victim: usize) -> i32 {
+pub fn mvv_lva(attacker: usize, victim: usize) -> i16 {
     PIECE_VALUES[victim] * 10 - PIECE_VALUES[attacker]
 }
 
-pub fn static_exchange_evaluation(board: &Board, mov: &Move) -> i32 {
+pub fn static_exchange_evaluation(board: &Board, mov: &Move) -> i16 {
     let mut gain = [0; 32];
     let mut depth = 0;
 
@@ -453,9 +453,12 @@ mod tests {
     use crate::move_generation::mov::Move;
     use crate::search_threads::evaluation::{get_passed_pawn_mask, static_exchange_evaluation};
 
-    fn see(fen: &str, starting_square: u8, ending_square: u8) -> i32 {
+    fn see(fen: &str, starting_square: u8, ending_square: u8) -> i16 {
         let board = Board::from_fen(fen);
-        static_exchange_evaluation(&board, &Move::regular(starting_square, ending_square, false))
+        static_exchange_evaluation(
+            &board,
+            &Move::regular(starting_square, ending_square, false),
+        )
     }
 
     #[test]

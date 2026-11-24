@@ -9,8 +9,8 @@ use std::cmp::{Reverse, max};
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-const MAX_DEPTH: u8 = 64;
-const MAX_PLIES: u8 = 128;
+pub(super) const MAX_DEPTH: u8 = 64;
+pub(super) const MAX_PLIES: u8 = 128;
 
 pub struct Search {
     pub(crate) nodes_searched: u64,
@@ -80,9 +80,9 @@ impl Search {
         if search_id > 0 {
             sorted_moves[1..].shuffle(&mut rand::rng());
         }
-        let mut sorted_moves: Vec<(Move, i32)> = sorted_moves.iter().map(|&m| (m, 0)).collect();
+        let mut sorted_moves: Vec<(Move, i16)> = sorted_moves.iter().map(|&m| (m, 0)).collect();
 
-        let mut best_score = -i32::MAX;
+        let mut best_score = -i16::MAX;
         let mut best_move = sorted_moves[0].0;
         let mut best_depth = 0;
         let mut best_ply = 0;
@@ -108,19 +108,19 @@ impl Search {
             // On shallow depths, use a full window since the previous depth's evaluation is
             // likely to be too unstable
             let (mut alpha, mut beta) = if depth <= 4 {
-                (-i32::MAX, i32::MAX)
+                (-i16::MAX, i16::MAX)
             } else {
                 // The evaluation with this current depth is likely
                 // to be close to the evaluation from the previous depth
                 (
-                    best_score.saturating_sub(delta).max(-i32::MAX),
+                    best_score.saturating_sub(delta),
                     best_score.saturating_add(delta),
                 )
             };
 
             let mut alpha_start = alpha;
             'aspiration: loop {
-                let mut depth_best_score = -i32::MAX;
+                let mut depth_best_score = -i16::MAX;
                 let mut depth_best_move = best_move;
                 let mut depth_best_ply = 0;
                 for i in 0..sorted_moves.len() {
@@ -223,12 +223,12 @@ impl Search {
                 // Check if root search failed outside the aspiration window
                 if depth_best_score <= alpha_start {
                     // Fail-low: widen alpha downward and re-search
-                    alpha = depth_best_score.saturating_sub(delta).max(-i32::MAX);
+                    alpha = depth_best_score.saturating_sub(delta);
                     alpha_start = alpha;
                     delta *= 2;
                     if delta > 500 {
-                        alpha = -i32::MAX;
-                        alpha_start = -i32::MAX;
+                        alpha = -i16::MAX;
+                        alpha_start = -i16::MAX;
                     }
                 } else if depth_best_score >= beta {
                     // Fail-high: widen beta upward and re-search
@@ -236,7 +236,7 @@ impl Search {
                     alpha = alpha_start; // Reset alpha
                     delta *= 2;
                     if delta > 500 {
-                        beta = i32::MAX;
+                        beta = i16::MAX;
                     }
                 } else {
                     // Exact score found, break
@@ -290,7 +290,7 @@ impl Search {
         }
     }
 
-    pub(super) const IMMEDIATE_MATE_SCORE: i32 = i32::MAX / 2;
+    pub(super) const IMMEDIATE_MATE_SCORE: i16 = i16::MAX - MAX_PLIES as i16;
 
     #[allow(clippy::too_many_arguments)]
     fn negamax(
@@ -299,12 +299,12 @@ impl Search {
         search_state: &SearchState,
         depth: u8,
         search_ply: u8,
-        alpha: i32,
-        beta: i32,
-        color: i32,
+        alpha: i16,
+        beta: i16,
+        color: i16,
         cut_node: bool,
         mate_finding: bool,
-    ) -> Option<(i32, u8)> {
+    ) -> Option<(i16, u8)> {
         // Draw by FIDE rules
         if board.get_halfmove_clock() >= 100
             || board.times_played() >= 3
@@ -314,11 +314,12 @@ impl Search {
         }
         self.count_nodes(search_state.nodes_searched);
 
+        // Mate distance pruning
         // Alpha can't possibly be worse than getting checkmated right now, if it is it means we already found a
         // faster mate elsewhere
         // Same for beta
-        let mut alpha = alpha.max(-Self::IMMEDIATE_MATE_SCORE + search_ply as i32);
-        let beta = beta.min(Self::IMMEDIATE_MATE_SCORE - search_ply as i32);
+        let mut alpha = alpha.max(-Self::IMMEDIATE_MATE_SCORE + search_ply as i16);
+        let beta = beta.min(Self::IMMEDIATE_MATE_SCORE - search_ply as i16);
         if alpha >= beta {
             return Some((alpha, search_ply));
         }
@@ -328,7 +329,7 @@ impl Search {
         let moves = move_generation::legal_moves(board);
         if moves.length == 0 {
             return if moves.check {
-                Some((search_ply as i32 - Self::IMMEDIATE_MATE_SCORE, search_ply)) // Checkmate
+                Some((search_ply as i16 - Self::IMMEDIATE_MATE_SCORE, search_ply)) // Checkmate
             } else {
                 Some((0, search_ply)) // Draw by no legal moves
             };
@@ -354,24 +355,27 @@ impl Search {
             if excluded_move.is_none() && tt_result.depth >= depth {
                 let non_pv = !pv_node;
                 match tt_result.node_type {
-                    1 if non_pv && tt_result.score <= alpha => {
-                        return Some((tt_result.score, search_ply));
+                    1 if non_pv && tt_result.search_score <= alpha => {
+                        return Some((tt_result.search_score, search_ply));
                     } // Upper bound
-                    0 => return Some((tt_result.score, search_ply)), // Exact
-                    -1 if non_pv && tt_result.score >= beta => {
-                        return Some((tt_result.score, search_ply));
+                    0 => return Some((tt_result.search_score, search_ply)), // Exact
+                    -1 if non_pv && tt_result.search_score >= beta => {
+                        return Some((tt_result.search_score, search_ply));
                     } // Lower bound
                     _ => {}
                 }
             }
         }
 
-        let static_eval = evaluation::evaluate(board) * color;
+        let static_eval = tt_result.map_or_else(
+            || evaluation::evaluate(board) * color,
+            |tt_result| tt_result.static_score,
+        );
 
         // If at max depth or max plies, start the quiescence search
         if depth == 0 || search_ply >= MAX_PLIES ||
             // Razoring: If the eval is *really* bad, just skip and go straight to quiescence search.
-            (!mate_finding && all_node && static_eval < alpha - 350 * depth as i32)
+            (!mate_finding && all_node && static_eval < alpha - 350 * depth as i16)
         {
             return self.quiescence(
                 board,
@@ -391,7 +395,7 @@ impl Search {
             && !pv_node
             && !in_check
             && depth <= 8
-            && static_eval >= beta + 150 * depth as i32
+            && static_eval >= beta + 150 * depth as i16
         {
             return Some((static_eval, search_ply));
         }
@@ -408,7 +412,7 @@ impl Search {
             && !in_check
             && !mate_finding
             && excluded_move.is_none()
-            && static_eval >= beta + 100 * depth as i32
+            && static_eval >= beta + 100 * depth as i16
             && search_ply > 5
             && depth >= 3
             // Require at least a couple of non-pawn pieces
@@ -461,7 +465,7 @@ impl Search {
         );
 
         let mut best_move = sorted_moves[0];
-        let mut best_value = -i32::MAX;
+        let mut best_value = -i16::MAX;
         let mut best_searched_ply = search_ply;
         for i in 0..sorted_moves.len() {
             if !Self::time_ok_hard(search_state) {
@@ -482,7 +486,7 @@ impl Search {
                 && depth <= 8
                 && i > 0
                 && !mov.capture()
-                && static_eval + 150 * depth as i32 <= alpha
+                && static_eval + 150 * depth as i16 <= alpha
             {
                 continue;
             }
@@ -497,8 +501,8 @@ impl Search {
                 && let Some(tt_result) = maybe_singular
                 && tt_result.best_move == mov
             {
-                let tt_score = tt_result.score;
-                let singular_beta = tt_score - depth as i32 / 4;
+                let tt_score = tt_result.search_score;
+                let singular_beta = tt_score - depth as i16 / 4;
                 let singular_depth = depth / 2;
 
                 // Do a search at this board state but exclude the TT move
@@ -639,7 +643,7 @@ impl Search {
             };
             search_state.transposition_table.insert(
                 board.zobrist_hash,
-                EntryResult::new(depth, best_value, evaluation_type, best_move),
+                EntryResult::new(depth, best_value, static_eval, evaluation_type, best_move),
                 search_ply,
             );
         }
@@ -652,11 +656,11 @@ impl Search {
         board: &mut Board,
         search_state: &SearchState,
         moves: Moves,
-        alpha: i32,
-        beta: i32,
+        alpha: i16,
+        beta: i16,
         search_ply: u8,
-        color: i32,
-    ) -> Option<(i32, u8)> {
+        color: i16,
+    ) -> Option<(i16, u8)> {
         if !Self::time_ok_hard(search_state) {
             return None;
         }
@@ -673,7 +677,7 @@ impl Search {
 
         if moves.length == 0 {
             return if moves.check {
-                Some((search_ply as i32 - Self::IMMEDIATE_MATE_SCORE, search_ply)) // Checkmate
+                Some((search_ply as i16 - Self::IMMEDIATE_MATE_SCORE, search_ply)) // Checkmate
             } else {
                 Some((0, search_ply)) // Draw by no legal moves
             };
@@ -751,9 +755,9 @@ impl Search {
         moves: &Moves,
         tt_move: Option<Move>,
         killer_move: Option<Move>,
-        color: i32,
+        color: i16,
     ) -> Vec<Move> {
-        let mut sorted_moves: Vec<(&Move, i32)> = Vec::with_capacity(moves.length);
+        let mut sorted_moves: Vec<(&Move, i16)> = Vec::with_capacity(moves.length);
         for i in 0..moves.length {
             let mov = &moves[i];
             let value;
@@ -761,15 +765,15 @@ impl Search {
                 && tt_move.eq(mov)
             {
                 // Moves previously evaluated to be the best in the TT are placed first
-                value = 1 << 20;
+                value = i16::MAX;
             } else if let Some(killer_move) = killer_move
                 && killer_move.eq(mov)
             {
                 if mov.flags() != 0b0001 && board.get_piece_at_square(mov.ending_index()).is_none()
                 {
-                    value = 10_000; // If killer move is non-capturing, score below captures but above normal quiets
+                    value = 12_000; // If killer move is non-capturing, score below captures but above normal quiets
                 } else {
-                    value = 1 << 19; // If capture, score below TT best move but above everything else
+                    value = i16::MAX - 1; // If capture, score below TT best move but above everything else
                 }
             } else {
                 value = if mov.capture() {
@@ -782,9 +786,9 @@ impl Search {
 
                     let eval = evaluation::static_exchange_evaluation(board, mov);
                     if eval != 0 {
-                        eval + (100_000 * eval.signum()) // Bad captures are scored below quiet moves
+                        eval + (15_000 * eval.signum()) // Bad captures are scored below quiet moves
                     } else {
-                        30_000
+                        10_000
                             + evaluation::mvv_lva(
                                 board.get_piece_at_square(mov.starting_index()).unwrap() as usize,
                                 capture_type as usize,
