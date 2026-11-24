@@ -439,7 +439,10 @@ impl Search {
 
             // Singular extension
             // If all other moves are worse than the TT move by some margin, extend the move
-            if let Some(tt_result) = maybe_singular
+            if search_ply > 0
+                && depth >= 5
+                && !mate_finding
+                && let Some(tt_result) = maybe_singular
                 && tt_result.best_move == mov
             {
                 let tt_score = tt_result.score;
