@@ -333,6 +333,7 @@ impl Search {
                 Some((0, search_ply)) // Draw by no legal moves
             };
         }
+        let in_check = moves.check;
 
         let excluded_move = if search_ply >= MAX_PLIES {
             None
@@ -367,18 +368,6 @@ impl Search {
 
         let static_eval = evaluation::evaluate(board) * color;
 
-        // Reverse futility pruning: If the static eval is *really* good, just skip searching since
-        // any possible move is unlikely to fall below beta.
-        if !mate_finding
-            && excluded_move.is_none()
-            && !pv_node
-            && !moves.check
-            && depth <= 8
-            && static_eval >= beta + 150 * depth as i32
-        {
-            return Some((static_eval, search_ply));
-        }
-
         // If at max depth or max plies, start the quiescence search
         if depth == 0 || search_ply >= MAX_PLIES ||
             // Razoring: If the eval is *really* bad, just skip and go straight to quiescence search.
@@ -393,6 +382,18 @@ impl Search {
                 search_ply + 1,
                 color,
             );
+        }
+
+        // Reverse futility pruning: If the static eval is *really* good, just skip searching since
+        // any possible move is unlikely to fall below beta.
+        if !mate_finding
+            && excluded_move.is_none()
+            && !pv_node
+            && !in_check
+            && depth <= 8
+            && static_eval >= beta + 150 * depth as i32
+        {
+            return Some((static_eval, search_ply));
         }
 
         let maybe_singular = tt_result.filter(|tt_result| {
@@ -432,6 +433,23 @@ impl Search {
             let mov = sorted_moves[i];
             // Singular verification: search every move except the one being tested.
             if Some(mov) == excluded_move {
+                continue;
+            }
+
+            let capturing =
+                mov.flags() == 0b0001 || board.get_piece_at_square(mov.ending_index()).is_some();
+
+            // Futility pruning: If the static eval is *really* bad, then skip this move
+            if !mate_finding
+                && excluded_move.is_none()
+                && !pv_node
+                && !in_check // Only prune if not currently in check and move won't deliver a check
+                && !move_generation::move_puts_king_in_check(board, &mov)
+                && depth <= 8
+                && i > 0
+                && !capturing
+                && static_eval + 150 * depth as i32 <= alpha
+            {
                 continue;
             }
 

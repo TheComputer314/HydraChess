@@ -501,6 +501,44 @@ fn get_indices_of_bits(bits: u64) -> Vec<u8> {
     indices
 }
 
+/// Check if a move puts the king in check.
+///
+/// Roughly 90-95% accurate, since this doesn't account for discovered check, en passant, etc.,
+/// but doing a full check is slow
+pub fn move_puts_king_in_check(board: &Board, mov: &Move) -> bool {
+    let white = board.white & mov.starting_mask() != 0;
+    let opposing_king = board.kings & if white { board.black } else { board.white };
+    let danger_mask = match board.get_piece_at_square(mov.starting_index()) {
+        Some(piece_type::PAWN) => {
+            let mut pawn_danger_mask = 0;
+            let forwards = if white {
+                mov.ending_index() + 8
+            } else {
+                mov.ending_index() - 8
+            };
+            if forwards % 8 != 0 {
+                pawn_danger_mask |= 1 << (forwards - 1);
+            }
+            if forwards % 8 != 7 {
+                pawn_danger_mask |= 1 << (forwards + 1);
+            }
+            pawn_danger_mask
+        }
+        Some(piece_type::KNIGHT) => move_lookup::possible_knight_moves(mov.ending_index()),
+        Some(piece_type::BISHOP) => {
+            move_lookup::possible_bishop_moves(mov.ending_index(), board.all_pieces())
+        }
+        Some(piece_type::ROOK) => {
+            move_lookup::possible_rook_moves(mov.ending_index(), board.all_pieces())
+        }
+        Some(piece_type::QUEEN) => {
+            move_lookup::possible_queen_moves(mov.ending_index(), board.all_pieces())
+        }
+        _ => return false,
+    };
+    opposing_king & danger_mask != 0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
