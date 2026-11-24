@@ -1,14 +1,17 @@
 use crate::move_generation::mov::piece_type;
+use crate::move_generation::mov::squares::mask;
 pub(crate) use board_state::Board;
 use mov::Move;
+use std::ops::{Index, IndexMut};
 
 pub mod board_state;
 pub mod mov;
 pub mod move_lookup;
 
 pub struct Moves {
-    pub moves: [Move; 218],
+    moves: [Move; 218],
     pub length: usize,
+    pub check: bool,
 }
 
 impl Moves {
@@ -16,6 +19,7 @@ impl Moves {
         Moves {
             moves: [Move::null(); 218],
             length: 0,
+            check: false,
         }
     }
 
@@ -23,44 +27,33 @@ impl Moves {
         self.moves[self.length] = mov;
         self.length += 1;
     }
-}
-
-pub fn legal_moves(board: &Board) -> Moves {
-    legal_moves_with_metadata(board).strip_metadata()
-}
-
-pub struct MovesWithMetadata {
-    moves: [(Move, Option<u8>); 218],
-    pub(crate) length: usize,
-    pub(crate) check: bool,
-}
-
-impl MovesWithMetadata {
-    fn push(&mut self, move_with_metadata: (Move, Option<u8>)) {
-        self.moves[self.length] = move_with_metadata;
-        self.length += 1;
-    }
-
-    pub fn strip_metadata(&self) -> Moves {
-        let mut moves = Moves::empty();
-        for i in 0..self.length {
-            moves.push(self.moves[i].0);
-        }
-        moves
-    }
 
     pub fn filter_captures(&self) -> Moves {
         let mut moves = Moves::empty();
         for i in 0..self.length {
-            if self.moves[i].1.is_some() {
-                moves.push(self.moves[i].0);
+            if self.moves[i].capture() {
+                moves.push(self.moves[i]);
             }
         }
         moves
     }
 }
 
-pub fn legal_moves_with_metadata(board: &Board) -> MovesWithMetadata {
+impl Index<usize> for Moves {
+    type Output = Move;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.moves[index]
+    }
+}
+
+impl IndexMut<usize> for Moves {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.moves[index]
+    }
+}
+
+pub fn legal_moves(board: &Board) -> Moves {
     let white = board.white_to_move();
     let friendly_pieces = if white { board.white } else { board.black };
     let enemy_pieces = if white { board.black } else { board.white };
@@ -72,18 +65,14 @@ pub fn legal_moves_with_metadata(board: &Board) -> MovesWithMetadata {
     let (king_danger_mask, checkers, checker_index) =
         king_danger_mask(board, white, enemy_pieces, king_mask, blockers);
 
-    let mut moves = MovesWithMetadata {
-        moves: [(Move::null(), None); 218],
-        length: 0,
-        check: false,
-    };
+    let mut moves = Moves::empty();
 
     // King moves are restricted by the danger mask
     let king_index = king_mask.trailing_zeros() as u8;
     let pseudo_legal_king_moves = move_lookup::possible_king_moves(king_index) & !friendly_pieces;
     let legal_king_moves = pseudo_legal_king_moves & !king_danger_mask;
     for i in get_indices_of_bits(legal_king_moves) {
-        moves.push((Move::regular(king_index, i), board.get_piece_at_square(i)));
+        moves.push(Move::regular(king_index, i, enemy_pieces & mask(i) != 0));
     }
 
     // If in double check, only legal moves are non-castling king moves
@@ -128,7 +117,7 @@ pub fn legal_moves_with_metadata(board: &Board) -> MovesWithMetadata {
             // And no pieces attacking the squares between the king and the rook
             && king_danger_mask & kingside_castle_blocker_mask == 0
         {
-            moves.push((Move::kingside_castle(white), None));
+            moves.push(Move::kingside_castle(white));
         }
         let queenside_castle_blocker_mask = if white { 0xe } else { 0xe << 56 };
         let queenside_castle_danger_mask = if white { 0xc } else { 0xc << 56 };
@@ -137,7 +126,7 @@ pub fn legal_moves_with_metadata(board: &Board) -> MovesWithMetadata {
             // And no pieces attacking the squares between the king and the rook
             && king_danger_mask & queenside_castle_danger_mask == 0
         {
-            moves.push((Move::queenside_castle(white), None));
+            moves.push(Move::queenside_castle(white));
         }
     }
 
@@ -169,18 +158,18 @@ pub fn legal_moves_with_metadata(board: &Board) -> MovesWithMetadata {
 
     // All other moves are restricted by the capture and block masks
     'friendly_piece_loop: for i in get_indices_of_bits(friendly_pieces & !king_mask) {
-        let mask = 1 << i;
-        if board.pawns & mask != 0 {
+        let start_mask = 1 << i;
+        if board.pawns & start_mask != 0 {
             let mut cardinal_pin_mask = u64::MAX;
             for ray in &cardinal_pin_rays {
-                if ray & mask != 0 {
+                if ray & start_mask != 0 {
                     cardinal_pin_mask = *ray;
                     break;
                 }
             }
             let mut diagonal_pin_mask = u64::MAX;
             for ray in &diagonal_pin_rays {
-                if ray & mask != 0 {
+                if ray & start_mask != 0 {
                     diagonal_pin_mask = *ray;
                     break;
                 }
@@ -194,24 +183,32 @@ pub fn legal_moves_with_metadata(board: &Board) -> MovesWithMetadata {
                     if push_mask & cardinal_pin_mask & block_mask != 0 {
                         let final_rank = if white { 7 } else { 0 };
                         if push_square / 8 == final_rank {
-                            moves.push((
-                                Move::pawn_promotion(i, push_square, piece_type::KNIGHT),
-                                None,
+                            moves.push(Move::pawn_promotion(
+                                i,
+                                push_square,
+                                piece_type::KNIGHT,
+                                false,
                             ));
-                            moves.push((
-                                Move::pawn_promotion(i, push_square, piece_type::BISHOP),
-                                None,
+                            moves.push(Move::pawn_promotion(
+                                i,
+                                push_square,
+                                piece_type::BISHOP,
+                                false,
                             ));
-                            moves.push((
-                                Move::pawn_promotion(i, push_square, piece_type::ROOK),
-                                None,
+                            moves.push(Move::pawn_promotion(
+                                i,
+                                push_square,
+                                piece_type::ROOK,
+                                false,
                             ));
-                            moves.push((
-                                Move::pawn_promotion(i, push_square, piece_type::QUEEN),
-                                None,
+                            moves.push(Move::pawn_promotion(
+                                i,
+                                push_square,
+                                piece_type::QUEEN,
+                                false,
                             ));
                         } else {
-                            moves.push((Move::regular(i, push_square), None));
+                            moves.push(Move::regular(i, push_square, false));
                         }
                     }
                     let starting_rank = if white { 1 } else { 6 };
@@ -222,7 +219,7 @@ pub fn legal_moves_with_metadata(board: &Board) -> MovesWithMetadata {
                         if double_push_mask & cardinal_pin_mask & block_mask & !board.all_pieces()
                             != 0
                         {
-                            moves.push((Move::double_pawn_push(i), None));
+                            moves.push(Move::double_pawn_push(i));
                         }
                     }
                 }
@@ -237,27 +234,32 @@ pub fn legal_moves_with_metadata(board: &Board) -> MovesWithMetadata {
                     let left_capture_mask = 1 << left_capture_square;
                     if left_capture_mask & diagonal_pin_mask & capture_mask & enemy_pieces != 0 {
                         if push_square / 8 == final_rank {
-                            moves.push((
-                                Move::pawn_promotion(i, left_capture_square, piece_type::KNIGHT),
-                                board.get_piece_at_square(left_capture_square),
+                            moves.push(Move::pawn_promotion(
+                                i,
+                                left_capture_square,
+                                piece_type::KNIGHT,
+                                true,
                             ));
-                            moves.push((
-                                Move::pawn_promotion(i, left_capture_square, piece_type::BISHOP),
-                                board.get_piece_at_square(left_capture_square),
+                            moves.push(Move::pawn_promotion(
+                                i,
+                                left_capture_square,
+                                piece_type::BISHOP,
+                                true,
                             ));
-                            moves.push((
-                                Move::pawn_promotion(i, left_capture_square, piece_type::ROOK),
-                                board.get_piece_at_square(left_capture_square),
+                            moves.push(Move::pawn_promotion(
+                                i,
+                                left_capture_square,
+                                piece_type::ROOK,
+                                true,
                             ));
-                            moves.push((
-                                Move::pawn_promotion(i, left_capture_square, piece_type::QUEEN),
-                                board.get_piece_at_square(left_capture_square),
+                            moves.push(Move::pawn_promotion(
+                                i,
+                                left_capture_square,
+                                piece_type::QUEEN,
+                                true,
                             ));
                         } else {
-                            moves.push((
-                                Move::regular(i, left_capture_square),
-                                board.get_piece_at_square(left_capture_square),
-                            ));
+                            moves.push(Move::regular(i, left_capture_square, true));
                         }
                     }
                 }
@@ -266,27 +268,32 @@ pub fn legal_moves_with_metadata(board: &Board) -> MovesWithMetadata {
                     let right_capture_mask = 1 << right_capture_square;
                     if right_capture_mask & diagonal_pin_mask & capture_mask & enemy_pieces != 0 {
                         if push_square / 8 == final_rank {
-                            moves.push((
-                                Move::pawn_promotion(i, right_capture_square, piece_type::KNIGHT),
-                                board.get_piece_at_square(right_capture_square),
+                            moves.push(Move::pawn_promotion(
+                                i,
+                                right_capture_square,
+                                piece_type::KNIGHT,
+                                true,
                             ));
-                            moves.push((
-                                Move::pawn_promotion(i, right_capture_square, piece_type::BISHOP),
-                                board.get_piece_at_square(right_capture_square),
+                            moves.push(Move::pawn_promotion(
+                                i,
+                                right_capture_square,
+                                piece_type::BISHOP,
+                                true,
                             ));
-                            moves.push((
-                                Move::pawn_promotion(i, right_capture_square, piece_type::ROOK),
-                                board.get_piece_at_square(right_capture_square),
+                            moves.push(Move::pawn_promotion(
+                                i,
+                                right_capture_square,
+                                piece_type::ROOK,
+                                true,
                             ));
-                            moves.push((
-                                Move::pawn_promotion(i, right_capture_square, piece_type::QUEEN),
-                                board.get_piece_at_square(right_capture_square),
+                            moves.push(Move::pawn_promotion(
+                                i,
+                                right_capture_square,
+                                piece_type::QUEEN,
+                                true,
                             ));
                         } else {
-                            moves.push((
-                                Move::regular(i, right_capture_square),
-                                board.get_piece_at_square(right_capture_square),
-                            ));
+                            moves.push(Move::regular(i, right_capture_square, true));
                         }
                     }
                 }
@@ -301,42 +308,50 @@ pub fn legal_moves_with_metadata(board: &Board) -> MovesWithMetadata {
                         || (move_lookup::possible_rook_moves(
                         king_index,
                         // Or: excluding this pawn and the captured pawn from blockers,
-                        board.all_pieces() & !mask & !(1 << capture_square),
+                        board.all_pieces() & !start_mask & !(1 << capture_square),
                     ) & 0xFF << (capture_rank * 8)) // and only looking at horizontal attacks
                         // Is there a horizontal attack from a rook or queen
                         & (enemy_pieces & (board.rooks | board.queens)) == 0)
                     {
                         // If target is to the right of the current square
                         if target_file != 0 && i % 8 == target_file - 1 {
-                            let end_mask = if white { mask << 9 } else { mask >> 7 };
+                            let end_mask = if white {
+                                start_mask << 9
+                            } else {
+                                start_mask >> 7
+                            };
                             if end_mask & block_mask & diagonal_pin_mask != 0 // If we can block the check
                                 || (end_mask & diagonal_pin_mask != 0 // Or if we can capture the piece without
                                 // moving off a pin
                                 && capture_mask & (1 << capture_square) != 0)
                             {
-                                moves.push((Move::right_en_passant(i), Some(piece_type::PAWN)));
+                                moves.push(Move::right_en_passant(i));
                             }
                         } else if target_file != 7 && i % 8 == target_file + 1 {
-                            let end_mask = if white { mask << 7 } else { mask >> 9 };
+                            let end_mask = if white {
+                                start_mask << 7
+                            } else {
+                                start_mask >> 9
+                            };
                             if end_mask & block_mask & diagonal_pin_mask != 0
                                 || (end_mask & diagonal_pin_mask != 0
                                     && capture_mask & (1 << capture_square) != 0)
                             {
-                                moves.push((Move::left_en_passant(i), Some(piece_type::PAWN)));
+                                moves.push(Move::left_en_passant(i));
                             }
                         }
                     }
                 }
             }
-        } else if board.knights & mask != 0 {
+        } else if board.knights & start_mask != 0 {
             // If pinned by a ray, the knight cannot move
             for ray in &cardinal_pin_rays {
-                if ray & mask != 0 {
+                if ray & start_mask != 0 {
                     continue 'friendly_piece_loop;
                 }
             }
             for ray in &diagonal_pin_rays {
-                if ray & mask != 0 {
+                if ray & start_mask != 0 {
                     continue 'friendly_piece_loop;
                 }
             }
@@ -345,19 +360,19 @@ pub fn legal_moves_with_metadata(board: &Board) -> MovesWithMetadata {
             let knight_moves =
                 move_lookup::possible_knight_moves(i) & legal_end_squares & !friendly_pieces;
             for j in get_indices_of_bits(knight_moves) {
-                moves.push((Move::regular(i, j), board.get_piece_at_square(j)));
+                moves.push(Move::regular(i, j, enemy_pieces & mask(j) != 0));
             }
-        } else if board.bishops & mask != 0 {
+        } else if board.bishops & start_mask != 0 {
             // If pinned by a horizontal ray, the bishop cannot move
             for ray in &cardinal_pin_rays {
-                if ray & mask != 0 {
+                if ray & start_mask != 0 {
                     continue 'friendly_piece_loop;
                 }
             }
             // If pinned by a diagonal ray, the bishop can only move along the pin ray
             let mut move_mask = u64::MAX;
             for ray in &diagonal_pin_rays {
-                if ray & mask != 0 {
+                if ray & start_mask != 0 {
                     move_mask = *ray;
                     break;
                 }
@@ -368,19 +383,19 @@ pub fn legal_moves_with_metadata(board: &Board) -> MovesWithMetadata {
                 & legal_end_squares
                 & !friendly_pieces;
             for j in get_indices_of_bits(bishop_moves) {
-                moves.push((Move::regular(i, j), board.get_piece_at_square(j)));
+                moves.push(Move::regular(i, j, enemy_pieces & mask(j) != 0));
             }
-        } else if board.rooks & mask != 0 {
+        } else if board.rooks & start_mask != 0 {
             // If pinned by a diagonal ray, the rook cannot move
             for ray in &diagonal_pin_rays {
-                if ray & mask != 0 {
+                if ray & start_mask != 0 {
                     continue 'friendly_piece_loop;
                 }
             }
             // If pinned by a horizontal ray, the rook can only move along the ray
             let mut move_mask = u64::MAX;
             for ray in &cardinal_pin_rays {
-                if ray & mask != 0 {
+                if ray & start_mask != 0 {
                     move_mask = *ray;
                     break;
                 }
@@ -391,13 +406,13 @@ pub fn legal_moves_with_metadata(board: &Board) -> MovesWithMetadata {
                 & legal_end_squares
                 & !friendly_pieces;
             for j in get_indices_of_bits(rook_moves) {
-                moves.push((Move::regular(i, j), board.get_piece_at_square(j)));
+                moves.push(Move::regular(i, j, enemy_pieces & mask(j) != 0));
             }
-        } else if board.queens & mask != 0 {
+        } else if board.queens & start_mask != 0 {
             // If pinned by a ray, the queen can only move along that ray
             let mut move_mask = u64::MAX;
             for ray in &diagonal_pin_rays {
-                if ray & mask != 0 {
+                if ray & start_mask != 0 {
                     move_mask = *ray;
                     break;
                 }
@@ -405,7 +420,7 @@ pub fn legal_moves_with_metadata(board: &Board) -> MovesWithMetadata {
             // No need to check cardinal_pin_rays if we already have a move_mask from the diagonal pins check
             if move_mask == u64::MAX {
                 for ray in &cardinal_pin_rays {
-                    if ray & mask != 0 {
+                    if ray & start_mask != 0 {
                         move_mask = *ray;
                         break;
                     }
@@ -417,7 +432,7 @@ pub fn legal_moves_with_metadata(board: &Board) -> MovesWithMetadata {
                 & legal_end_squares
                 & !friendly_pieces;
             for j in get_indices_of_bits(queen_moves) {
-                moves.push((Move::regular(i, j), board.get_piece_at_square(j)));
+                moves.push(Move::regular(i, j, enemy_pieces & mask(j) != 0));
             }
         }
     }
@@ -768,7 +783,7 @@ mod tests {
         transposition_tables: &mut Vec<Vec<(u64, usize)>>,
         divide: bool,
     ) -> usize {
-        let moves = legal_moves_with_metadata(board);
+        let moves = legal_moves(board);
         if moves.length == 0 {
             return 0;
         }
@@ -777,7 +792,7 @@ mod tests {
         }
         let mut total_moves = 0;
         for i in 0..moves.length {
-            let mov = &moves.moves[i].0;
+            let mov = &moves.moves[i];
             let metadata = board.make_move(&mov);
             let table_key = board.zobrist_hash as usize % TABLE_SIZE;
             let (entry_hash, entry_nodes) = transposition_tables[depth - 1][table_key];

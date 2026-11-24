@@ -504,20 +504,49 @@ impl Board {
         let end_square = end_rank * 8 + end_file;
         let mov;
         if self.pawns & mask(start_square) != 0 {
-            if start_rank == 1 && end_rank == 3 {
-                mov = Move::double_pawn_push(start_square);
-            } else if start_rank == 6 && end_rank == 4 {
+            if (start_rank == 1 && end_rank == 3) || (start_rank == 6 && end_rank == 4) {
                 mov = Move::double_pawn_push(start_square);
             } else if let Some(char) = chars.next() {
+                // Pawn promotion
                 match char {
-                    'n' => mov = Move::pawn_promotion(start_square, end_square, piece_type::KNIGHT),
-                    'b' => mov = Move::pawn_promotion(start_square, end_square, piece_type::BISHOP),
-                    'r' => mov = Move::pawn_promotion(start_square, end_square, piece_type::ROOK),
-                    'q' => mov = Move::pawn_promotion(start_square, end_square, piece_type::QUEEN),
+                    'n' => {
+                        mov = Move::pawn_promotion(
+                            start_square,
+                            end_square,
+                            piece_type::KNIGHT,
+                            mask(end_square) & self.all_pieces() != 0,
+                        )
+                    }
+                    'b' => {
+                        mov = Move::pawn_promotion(
+                            start_square,
+                            end_square,
+                            piece_type::BISHOP,
+                            mask(end_square) & self.all_pieces() != 0,
+                        )
+                    }
+                    'r' => {
+                        mov = Move::pawn_promotion(
+                            start_square,
+                            end_square,
+                            piece_type::ROOK,
+                            mask(end_square) & self.all_pieces() != 0,
+                        )
+                    }
+                    'q' => {
+                        mov = Move::pawn_promotion(
+                            start_square,
+                            end_square,
+                            piece_type::QUEEN,
+                            mask(end_square) & self.all_pieces() != 0,
+                        )
+                    }
                     _ => panic!("Invalid promotion character"),
                 }
             } else {
+                // If capture
                 if start_file != end_file
+                    // And it might be en passant
                     && let Some(target) = self.en_passant_target()
                 {
                     let target_rank = target / 8;
@@ -534,13 +563,19 @@ impl Board {
                         {
                             mov = Move::right_en_passant(start_square);
                         } else {
-                            mov = Move::regular(start_square, end_square);
+                            // If not en passant, it's just a regular capture
+                            mov = Move::regular(start_square, end_square, true);
                         }
                     } else {
-                        mov = Move::regular(start_square, end_square);
+                        // If not en passant, it's just a regular capture
+                        mov = Move::regular(start_square, end_square, true);
                     }
                 } else {
-                    mov = Move::regular(start_square, end_square);
+                    mov = Move::regular(
+                        start_square,
+                        end_square,
+                        mask(end_square) & self.all_pieces() != 0,
+                    );
                 }
             }
         } else if self.kings & mask(start_square) != 0 {
@@ -562,10 +597,18 @@ impl Board {
             {
                 mov = Move::queenside_castle(false);
             } else {
-                mov = Move::regular(start_square, end_square);
+                mov = Move::regular(
+                    start_square,
+                    end_square,
+                    mask(end_square) & self.all_pieces() != 0,
+                );
             }
         } else {
-            mov = Move::regular(start_square, end_square);
+            mov = Move::regular(
+                start_square,
+                end_square,
+                mask(end_square) & self.all_pieces() != 0,
+            );
         }
         self.make_move(&mov);
     }
@@ -1476,7 +1519,7 @@ mod tests {
         // Test making a move
         let start_board = Board::starting();
         let mut board = start_board.clone();
-        let mov = Move::regular(A2, A3);
+        let mov = Move::regular(A2, A3, false);
         let metadata = board.make_move(&mov);
         assert_eq!(
             board,
@@ -1489,7 +1532,7 @@ mod tests {
         let start_board =
             Board::from_fen("rnbqkb1r/pppppppp/8/8/4n3/2N5/PPPPPPPP/R1BQKBNR w KQkq - 0 1");
         let mut board = start_board.clone();
-        let mov = Move::regular(C3, E4);
+        let mov = Move::regular(C3, E4, true);
         let metadata = board.make_move(&mov);
         assert_eq!(
             board,
@@ -1502,7 +1545,7 @@ mod tests {
         let start_board =
             Board::from_fen("rnbqkbnr/1ppppppp/8/p7/P7/8/1PPPPPPP/RNBQKBNR w KQkq - 0 1");
         let mut board = start_board.clone();
-        let mov = Move::regular(A1, A3);
+        let mov = Move::regular(A1, A3, false);
         let metadata = board.make_move(&mov);
         assert_eq!(
             board,
@@ -1514,7 +1557,7 @@ mod tests {
         // Test pawn promotion
         let start_board = Board::from_fen("1b2k3/P7/8/8/8/8/8/4K3 w - - 0 1");
         let mut board = start_board.clone();
-        let mov = Move::pawn_promotion(A7, B8, piece_type::QUEEN);
+        let mov = Move::pawn_promotion(A7, B8, piece_type::QUEEN, true);
         let metadata = board.make_move(&mov);
         assert_eq!(board, Board::from_fen("1Q2k3/8/8/8/8/8/8/4K3 b - - 0 1"));
         board.unmake_move(&mov, metadata);

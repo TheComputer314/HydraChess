@@ -1,6 +1,6 @@
 use crate::move_generation;
 use crate::move_generation::mov::{Move, piece_type};
-use crate::move_generation::{Board, Moves, MovesWithMetadata};
+use crate::move_generation::{Board, Moves};
 use crate::search_threads::transposition_table::{EntryResult, TranspositionTable};
 use crate::search_threads::{SearchResult, evaluation, is_mate_score, print_info};
 use minstant::Instant;
@@ -65,7 +65,7 @@ impl Search {
                 depth: 0,
                 best_ply: 0,
                 score: evaluation::evaluate(board),
-                best_move: legal_moves.moves[0],
+                best_move: legal_moves[0],
             };
         }
 
@@ -325,7 +325,7 @@ impl Search {
 
         let alpha_original = alpha;
 
-        let moves = move_generation::legal_moves_with_metadata(board);
+        let moves = move_generation::legal_moves(board);
         if moves.length == 0 {
             return if moves.check {
                 Some((search_ply as i32 - Self::IMMEDIATE_MATE_SCORE, search_ply)) // Checkmate
@@ -414,7 +414,6 @@ impl Search {
             extensions -= 1;
         }
 
-        let moves = moves.strip_metadata();
         let sorted_moves = self.sort_moves(
             board,
             &moves,
@@ -436,9 +435,6 @@ impl Search {
                 continue;
             }
 
-            let capturing =
-                mov.flags() == 0b0001 || board.get_piece_at_square(mov.ending_index()).is_some();
-
             // Futility pruning: If the static eval is *really* bad, then skip this move
             if !mate_finding
                 && excluded_move.is_none()
@@ -447,7 +443,7 @@ impl Search {
                 && !move_generation::move_puts_king_in_check(board, &mov)
                 && depth <= 8
                 && i > 0
-                && !capturing
+                && !mov.capture()
                 && static_eval + 150 * depth as i32 <= alpha
             {
                 continue;
@@ -617,7 +613,7 @@ impl Search {
         &mut self,
         board: &mut Board,
         search_state: &SearchState,
-        moves: MovesWithMetadata,
+        moves: Moves,
         alpha: i32,
         beta: i32,
         search_ply: u8,
@@ -657,7 +653,7 @@ impl Search {
 
         // Search all check evasions in check,
         let moves = if moves.check {
-            moves.strip_metadata()
+            moves
         } else {
             // Otherwise only search captures
             moves.filter_captures()
@@ -684,7 +680,7 @@ impl Search {
             let result = self.quiescence(
                 board,
                 search_state,
-                move_generation::legal_moves_with_metadata(board),
+                move_generation::legal_moves(board),
                 -beta,
                 -alpha,
                 search_ply + 1,
@@ -721,7 +717,7 @@ impl Search {
     ) -> Vec<Move> {
         let mut sorted_moves: Vec<(&Move, i32)> = Vec::with_capacity(moves.length);
         for i in 0..moves.length {
-            let mov = &moves.moves[i];
+            let mov = &moves[i];
             let value;
             if let Some(tt_move) = tt_move
                 && tt_move.eq(mov)
@@ -738,14 +734,14 @@ impl Search {
                     value = 1 << 19; // If capture, score below TT best move but above everything else
                 }
             } else {
-                // En passant moves don't have the captured piece at the end square, so special case it
-                let capture_type = if mov.flags() == 0b0001 {
-                    Some(piece_type::PAWN)
-                } else {
-                    board.get_piece_at_square(mov.ending_index())
-                };
+                value = if mov.capture() {
+                    // En passant moves don't have the captured piece at the end square, so special case it
+                    let capture_type = if mov.flags() == 0b0001 {
+                        piece_type::PAWN
+                    } else {
+                        board.get_piece_at_square(mov.ending_index()).unwrap()
+                    };
 
-                value = if let Some(capture_type) = capture_type {
                     let eval = evaluation::static_exchange_evaluation(board, mov);
                     if eval != 0 {
                         eval + (100_000 * eval.signum()) // Bad captures are scored below quiet moves

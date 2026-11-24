@@ -7,7 +7,7 @@ use std::fmt::Formatter;
 /// From least significant bit:
 /// - 6 bits: starting square
 /// - 6 bits: ending square
-/// - 4 bits: flags
+/// - 3 bits: flags
 ///   - 0b0000: None
 ///   - 0b0001: En passant
 ///   - 0b0010: Castle
@@ -16,6 +16,7 @@ use std::fmt::Formatter;
 ///   - 0b0101: Rook promotion
 ///   - 0b0110: Bishop promotion
 ///   - 0b0111: Knight promotion
+/// - 1 bit: Capture
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Move {
     pub data: u16,
@@ -26,11 +27,11 @@ impl fmt::Display for Move {
         let starting_square = to_name(self.starting_index());
         let ending_square = to_name(self.ending_index());
         write!(f, "{}{}", starting_square, ending_square)?;
-        match self.flags() {
-            0b0100 => write!(f, "q")?,
-            0b0101 => write!(f, "r")?,
-            0b0110 => write!(f, "b")?,
-            0b0111 => write!(f, "n")?,
+        match self.flags() & 0b111 {
+            0b100 => write!(f, "q")?,
+            0b101 => write!(f, "r")?,
+            0b110 => write!(f, "b")?,
+            0b111 => write!(f, "n")?,
             _ => {}
         }
 
@@ -39,11 +40,16 @@ impl fmt::Display for Move {
 }
 
 impl Move {
-    pub fn regular(starting_index: u8, ending_index: u8) -> Self {
-        Self::new(starting_index, ending_index, 0)
+    pub fn regular(starting_index: u8, ending_index: u8, capture: bool) -> Self {
+        Self::new(starting_index, ending_index, 0, capture)
     }
 
-    pub fn pawn_promotion(starting_index: u8, ending_index: u8, promotion: u8) -> Self {
+    pub fn pawn_promotion(
+        starting_index: u8,
+        ending_index: u8,
+        promotion: u8,
+        capture: bool,
+    ) -> Self {
         let flags = match promotion {
             piece_type::QUEEN => 0b0100,
             piece_type::ROOK => 0b0101,
@@ -51,51 +57,54 @@ impl Move {
             piece_type::KNIGHT => 0b0111,
             _ => panic!("Invalid promotion piece type"),
         };
-        Self::new(starting_index, ending_index, flags)
+        Self::new(starting_index, ending_index, flags, capture)
     }
 
     pub fn double_pawn_push(starting_index: u8) -> Self {
         if squares::rank(starting_index) == 1 {
-            Self::new(starting_index, north(north(starting_index)), 0b0011)
+            Self::new(starting_index, north(north(starting_index)), 0b0011, false)
         } else {
-            Self::new(starting_index, south(south(starting_index)), 0b0011)
+            Self::new(starting_index, south(south(starting_index)), 0b0011, false)
         }
     }
 
     pub fn left_en_passant(starting_index: u8) -> Self {
         if squares::rank(starting_index) == 4 {
-            Self::new(starting_index, northwest(starting_index), 0b0001)
+            Self::new(starting_index, northwest(starting_index), 0b0001, true)
         } else {
-            Self::new(starting_index, southwest(starting_index), 0b0001)
+            Self::new(starting_index, southwest(starting_index), 0b0001, true)
         }
     }
 
     pub fn right_en_passant(starting_index: u8) -> Self {
         if squares::rank(starting_index) == 4 {
-            Self::new(starting_index, northeast(starting_index), 0b0001)
+            Self::new(starting_index, northeast(starting_index), 0b0001, true)
         } else {
-            Self::new(starting_index, southeast(starting_index), 0b0001)
+            Self::new(starting_index, southeast(starting_index), 0b0001, true)
         }
     }
 
     pub fn kingside_castle(white: bool) -> Self {
         if white {
-            Self::new(E1, G1, 0b0010)
+            Self::new(E1, G1, 0b010, false)
         } else {
-            Self::new(E8, G8, 0b0010)
+            Self::new(E8, G8, 0b010, false)
         }
     }
 
     pub fn queenside_castle(white: bool) -> Self {
         if white {
-            Self::new(E1, C1, 0b0010)
+            Self::new(E1, C1, 0b010, false)
         } else {
-            Self::new(E8, C8, 0b0010)
+            Self::new(E8, C8, 0b010, false)
         }
     }
 
-    fn new(starting_index: u8, ending_index: u8, flags: u8) -> Self {
-        let data = (starting_index as u16) | ((ending_index as u16) << 6) | ((flags as u16) << 12);
+    fn new(starting_index: u8, ending_index: u8, flags: u8, capture: bool) -> Self {
+        let data = (starting_index as u16)
+            | ((ending_index as u16) << 6)
+            | ((flags as u16) << 12)
+            | ((capture as u16) << 15);
         Self { data }
     }
 
@@ -120,7 +129,11 @@ impl Move {
     }
 
     pub fn flags(&self) -> u8 {
-        (self.data >> 12) as u8
+        (self.data >> 12) as u8 & 0b111
+    }
+
+    pub fn capture(&self) -> bool {
+        self.data >> 15 == 1
     }
 }
 

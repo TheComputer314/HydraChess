@@ -455,7 +455,7 @@ mod tests {
 
     fn see(fen: &str, starting_square: u8, ending_square: u8) -> i32 {
         let board = Board::from_fen(fen);
-        static_exchange_evaluation(&board, &Move::regular(starting_square, ending_square))
+        static_exchange_evaluation(&board, &Move::regular(starting_square, ending_square, false))
     }
 
     #[test]
