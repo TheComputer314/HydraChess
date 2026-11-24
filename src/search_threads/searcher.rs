@@ -655,8 +655,13 @@ impl Search {
         let mut alpha = alpha.max(static_eval);
         let mut best_value = static_eval;
 
-        // Only search captures
-        let moves = moves.filter_captures();
+        // Search all check evasions in check,
+        let moves = if moves.check {
+            moves.strip_metadata()
+        } else {
+            // Otherwise only search captures
+            moves.filter_captures()
+        };
         if moves.length == 0 {
             return Some((best_value, search_ply));
         }
