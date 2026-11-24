@@ -113,7 +113,7 @@ impl Search {
                 // The evaluation with this current depth is likely
                 // to be close to the evaluation from the previous depth
                 (
-                    best_score.saturating_sub(delta),
+                    best_score.saturating_sub(delta).max(-i16::MAX),
                     best_score.saturating_add(delta),
                 )
             };
@@ -223,7 +223,7 @@ impl Search {
                 // Check if root search failed outside the aspiration window
                 if depth_best_score <= alpha_start {
                     // Fail-low: widen alpha downward and re-search
-                    alpha = depth_best_score.saturating_sub(delta);
+                    alpha = depth_best_score.saturating_sub(delta).max(-i16::MAX);
                     alpha_start = alpha;
                     delta *= 2;
                     if delta > 500 {
@@ -342,7 +342,7 @@ impl Search {
             self.singular_exclude_moves[search_ply as usize]
         };
 
-        let pv_node = search_ply == 0 || beta - alpha > 1;
+        let pv_node = search_ply == 0 || i32::from(beta) - i32::from(alpha) > 1;
         let all_node = !(pv_node || cut_node);
 
         let tt_result = search_state
@@ -375,7 +375,9 @@ impl Search {
         // If at max depth or max plies, start the quiescence search
         if depth == 0 || search_ply >= MAX_PLIES ||
             // Razoring: If the eval is *really* bad, just skip and go straight to quiescence search.
-            (!mate_finding && all_node && static_eval < alpha - 350 * depth as i16)
+            (!mate_finding
+                && all_node
+                && i32::from(static_eval) < i32::from(alpha) - 350 * i32::from(depth))
         {
             return self.quiescence(
                 board,
@@ -395,7 +397,7 @@ impl Search {
             && !pv_node
             && !in_check
             && depth <= 8
-            && static_eval >= beta + 150 * depth as i16
+            && i32::from(static_eval) >= i32::from(beta) + 150 * i32::from(depth)
         {
             return Some((static_eval, search_ply));
         }
@@ -412,7 +414,7 @@ impl Search {
             && !in_check
             && !mate_finding
             && excluded_move.is_none()
-            && static_eval >= beta + 100 * depth as i16
+            && i32::from(static_eval) >= i32::from(beta) + 100 * i32::from(depth)
             && search_ply > 5
             && depth >= 3
             // Require at least a couple of non-pawn pieces
@@ -422,7 +424,7 @@ impl Search {
             // TODO: Tune
             let reduction = ((2048
                 + 265 * depth as u32
-                + 477 * (static_eval - beta).clamp(0, 1187) as u32 / 128)
+                + 477 * (i32::from(static_eval) - i32::from(beta)).clamp(0, 1187) as u32 / 128)
                 / 1024) as u8;
 
             let metadata = board.make_move(&Move::null());
@@ -486,7 +488,7 @@ impl Search {
                 && depth <= 8
                 && i > 0
                 && !mov.capture()
-                && static_eval + 150 * depth as i16 <= alpha
+                && i32::from(static_eval) + 150 * i32::from(depth) <= i32::from(alpha)
             {
                 continue;
             }

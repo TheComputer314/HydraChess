@@ -523,32 +523,39 @@ fn get_indices_of_bits(bits: u64) -> Vec<u8> {
 pub fn move_puts_king_in_check(board: &Board, mov: &Move) -> bool {
     let white = board.white & mov.starting_mask() != 0;
     let opposing_king = board.kings & if white { board.black } else { board.white };
+    let occupied = board.all_pieces() & !mov.starting_mask();
+    let ending_square = mov.ending_index();
     let danger_mask = match board.get_piece_at_square(mov.starting_index()) {
-        Some(piece_type::PAWN) => {
-            let mut pawn_danger_mask = 0;
-            let forwards = if white {
-                mov.ending_index() + 8
-            } else {
-                mov.ending_index() - 8
-            };
-            if forwards % 8 != 0 {
-                pawn_danger_mask |= 1 << (forwards - 1);
+        Some(piece_type::PAWN) => match mov.flags() {
+            0b0100 => move_lookup::possible_queen_moves(ending_square, occupied),
+            0b0101 => move_lookup::possible_rook_moves(ending_square, occupied),
+            0b0110 => move_lookup::possible_bishop_moves(ending_square, occupied),
+            0b0111 => move_lookup::possible_knight_moves(ending_square),
+            _ => {
+                let file = ending_square % 8;
+                let mut pawn_danger_mask = 0;
+                if white && ending_square < 56 {
+                    if file > 0 {
+                        pawn_danger_mask |= 1 << (ending_square + 7);
+                    }
+                    if file < 7 {
+                        pawn_danger_mask |= 1 << (ending_square + 9);
+                    }
+                } else if !white && ending_square >= 8 {
+                    if file > 0 {
+                        pawn_danger_mask |= 1 << (ending_square - 9);
+                    }
+                    if file < 7 {
+                        pawn_danger_mask |= 1 << (ending_square - 7);
+                    }
+                }
+                pawn_danger_mask
             }
-            if forwards % 8 != 7 {
-                pawn_danger_mask |= 1 << (forwards + 1);
-            }
-            pawn_danger_mask
-        }
-        Some(piece_type::KNIGHT) => move_lookup::possible_knight_moves(mov.ending_index()),
-        Some(piece_type::BISHOP) => {
-            move_lookup::possible_bishop_moves(mov.ending_index(), board.all_pieces())
-        }
-        Some(piece_type::ROOK) => {
-            move_lookup::possible_rook_moves(mov.ending_index(), board.all_pieces())
-        }
-        Some(piece_type::QUEEN) => {
-            move_lookup::possible_queen_moves(mov.ending_index(), board.all_pieces())
-        }
+        },
+        Some(piece_type::KNIGHT) => move_lookup::possible_knight_moves(ending_square),
+        Some(piece_type::BISHOP) => move_lookup::possible_bishop_moves(ending_square, occupied),
+        Some(piece_type::ROOK) => move_lookup::possible_rook_moves(ending_square, occupied),
+        Some(piece_type::QUEEN) => move_lookup::possible_queen_moves(ending_square, occupied),
         _ => return false,
     };
     opposing_king & danger_mask != 0
@@ -593,6 +600,17 @@ mod tests {
         let board = Board::from_fen("7k/8/7r/K3pP1r/7r/8/8/8 w - - 0 2");
         let moves = legal_moves(&board);
         assert_eq!(moves.length, 2);
+    }
+
+    #[test]
+    fn promotion_checks_are_detected_for_both_colors() {
+        let board = Board::from_fen("7k/6P1/8/8/8/8/8/K7 w - - 0 1");
+        let white_promotion = Move::pawn_promotion(54, 62, piece_type::QUEEN, false);
+        assert!(move_puts_king_in_check(&board, &white_promotion));
+
+        let board = Board::from_fen("k7/8/8/8/8/8/p7/7K b - - 0 1");
+        let black_promotion = Move::pawn_promotion(8, 0, piece_type::QUEEN, false);
+        assert!(move_puts_king_in_check(&board, &black_promotion));
     }
 
     #[test]
