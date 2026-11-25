@@ -16,6 +16,7 @@ pub struct Search {
     pub(crate) nodes_searched: u64,
     killer_moves: [Option<Move>; MAX_PLIES as usize],
     singular_exclude_moves: [Option<Move>; MAX_PLIES as usize],
+    history: [[[i16; 64]; 64]; 2],
 }
 
 pub struct SearchState<'a> {
@@ -33,7 +34,12 @@ impl Search {
             nodes_searched: 0,
             killer_moves: [None; MAX_PLIES as usize],
             singular_exclude_moves: [None; MAX_PLIES as usize],
+            history: [[[0; 64]; 64]; 2],
         }
+    }
+
+    pub(super) fn reset_history(&mut self) {
+        self.history = [[[0; 64]; 64]; 2];
     }
 
     fn time_ok_hard(search_state: &SearchState) -> bool {
@@ -53,6 +59,13 @@ impl Search {
         self.nodes_searched = 0;
         self.killer_moves.fill(None);
         self.singular_exclude_moves.fill(None);
+        for side in &mut self.history {
+            for start in side {
+                for end in start {
+                    *end /= 2;
+                }
+            }
+        }
         let legal_moves = move_generation::legal_moves(board);
         if legal_moves.length == 0 {
             panic!(
@@ -629,6 +642,10 @@ impl Search {
                     // If a move is so good it causes a beta cutoff, then it should be given
                     // priority in move ordering
                     self.killer_moves[search_ply as usize] = Some(mov);
+                    self.update_history(board, &mov, (depth * depth) as i16);
+                    for mov in &sorted_moves[0..i] {
+                        self.update_history(board, mov, -(depth as i16));
+                    }
                     break;
                 }
             }
@@ -800,7 +817,8 @@ impl Search {
                     let metadata = board.make_move(mov);
                     let eval = evaluation::evaluate(board) * color;
                     board.unmake_move(mov, metadata);
-                    eval
+                    eval + self.history[board.white_to_move() as usize]
+                        [mov.starting_index() as usize][mov.ending_index() as usize]
                 };
             }
             sorted_moves.push((mov, value));
@@ -815,5 +833,13 @@ impl Search {
         if self.nodes_searched % 2047 == 0 {
             nodes_searched.fetch_add(2048, Ordering::Relaxed);
         }
+    }
+
+    fn update_history(&mut self, board: &Board, mov: &Move, bonus: i16) {
+        const MAX_HISTORY: i16 = 2048;
+        let clamped_bonus = bonus.clamp(-MAX_HISTORY, MAX_HISTORY);
+        let score = &mut self.history[board.white_to_move() as usize]
+            [mov.starting_index() as usize][mov.ending_index() as usize];
+        *score += clamped_bonus - *score * clamped_bonus.abs() / MAX_HISTORY;
     }
 }

@@ -40,6 +40,8 @@ struct SharedState {
     transposition_table: TranspositionTable,
     results: Vec<Mutex<SearchResult>>,
     nodes_searched: AtomicU64,
+    // Bumped on ucinewgame
+    new_game_generation: AtomicU64,
 }
 
 pub struct Signals {
@@ -108,6 +110,7 @@ impl SearchThreads {
             transposition_table: TranspositionTable::new(256),
             results: Self::empty_results(search_threads),
             nodes_searched: AtomicU64::new(0),
+            new_game_generation: AtomicU64::new(0),
         }
     }
 
@@ -131,10 +134,17 @@ impl SearchThreads {
             let stop_signal = Arc::clone(&self.stop_signal);
             handles.push(thread::spawn(move || {
                 let mut search = Search::new();
+                let mut seen_new_game_generation = state.new_game_generation.load(Ordering::Acquire);
                 loop {
                     state.start_barrier.wait();
                     if state.quit.load(Ordering::Acquire) {
                         break;
+                    }
+                    // If a ucinewgame call has occurred, reset the history heuristic
+                    let new_game_generation = state.new_game_generation.load(Ordering::Acquire);
+                    if new_game_generation != seen_new_game_generation {
+                        search.reset_history();
+                        seen_new_game_generation = new_game_generation;
                     }
                     sleep(Duration::from_millis((i as u64) * 2));
                     let mut board = state.root_board.lock().unwrap().clone();
@@ -169,6 +179,9 @@ impl SearchThreads {
     pub fn new_game(&mut self) {
         *self.shared_state.root_board.lock().unwrap() = Board::starting();
         self.shared_state.transposition_table.clear();
+        self.shared_state
+            .new_game_generation
+            .fetch_add(1, Ordering::Release);
         self.moves_played = 0;
     }
 
