@@ -6,6 +6,7 @@ use crate::search_threads::{SearchResult, evaluation, is_mate_score, print_info}
 use minstant::Instant;
 use rand::seq::SliceRandom;
 use std::cmp::{Reverse, max};
+use std::io::{Write, stdout};
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
@@ -101,7 +102,6 @@ impl Search {
         let mut best_ply = 0;
         let mut stability = 0;
         let mut last_best_move = Move::null();
-        let mut last_print_time = search_state.timer.elapsed().as_secs_f64();
 
         let mut mate_finding = false;
 
@@ -139,6 +139,12 @@ impl Search {
                 for i in 0..sorted_moves.len() {
                     let (mov, sort_eval) = &mut sorted_moves[i];
                     let metadata = board.make_move(mov);
+
+                    if search_id == 0 && search_state.timer.elapsed().as_secs_f64() > 1.5 {
+                        let mut out = stdout().lock();
+                        writeln!(out, "info depth {} currmove {} currmovenumber {}", depth, mov, i + 1).unwrap();
+                        out.flush().unwrap();
+                    }
 
                     // The first move is likely to be the best move, so do a full search
                     let result = if i == 0 || depth < 2 {
@@ -217,17 +223,6 @@ impl Search {
                         break;
                     }
 
-                    if search_id == 0 {
-                        let score = if depth > 0 { best_score } else { 0 };
-                        let time = search_state.timer.elapsed().as_secs_f64();
-                        let nodes = search_state.nodes_searched.load(Ordering::Relaxed)
-                            + (self.nodes_searched & 2047);
-                        if search_state.timer.elapsed().as_secs_f64() - last_print_time > 0.05 {
-                            print_info(depth, depth_best_ply, score, time, nodes);
-                            last_print_time = time;
-                        }
-                    }
-
                     if !Self::time_ok_hard(search_state) {
                         break 'iterative_deepening;
                     }
@@ -260,6 +255,14 @@ impl Search {
                     break 'aspiration;
                 }
             }
+            if search_id == 0 {
+                let score = if depth > 0 { best_score } else { 0 };
+                let time = search_state.timer.elapsed().as_secs_f64();
+                let nodes = search_state.nodes_searched.load(Ordering::Relaxed)
+                    + (self.nodes_searched & 2047);
+                print_info(depth, best_ply, score, time, nodes);
+            }
+
             // We've reached the maximum depth, any further search is meaningless, so exit all threads early
             if depth + 1 == MAX_DEPTH {
                 search_state.stop_signal.store(true, Ordering::Relaxed);
