@@ -117,7 +117,7 @@ impl Search {
                 }
             }
 
-            let mut delta = 50;
+            let mut delta = 20;
             // On shallow depths, use a full window since the previous depth's evaluation is
             // likely to be too unstable
             let (mut alpha, mut beta) = if depth <= 4 {
@@ -423,8 +423,8 @@ impl Search {
             && excluded_move.is_none()
             && !pv_node
             && !in_check
-            && depth <= 8
-            && i32::from(static_eval) >= i32::from(beta) + 150 * i32::from(depth)
+            && depth <= 6
+            && i32::from(static_eval) >= i32::from(beta) + 80 * i32::from(depth)
         {
             return Some((static_eval, search_ply));
         }
@@ -441,17 +441,15 @@ impl Search {
             && !in_check
             && !mate_finding
             && excluded_move.is_none()
-            && i32::from(static_eval) >= i32::from(beta) + 100 * i32::from(depth)
+            && i32::from(static_eval) >= i32::from(beta) + 70 * i32::from(depth)
             && search_ply > 5
             && depth >= 3
             // Require at least a couple of non-pawn pieces
             && (board.all_pieces() & !board.kings & !board.pawns).count_ones() > 2
         {
-            // Stolen from Reckless
-            // TODO: Tune
-            let reduction = ((2048
-                + 265 * depth as u32
-                + 477 * (i32::from(static_eval) - i32::from(beta)).clamp(0, 1187) as u32 / 128)
+            let reduction = ((1792
+                + 200 * depth as u32
+                + 477 * (i32::from(static_eval) - i32::from(beta)).clamp(0, 900) as u32 / 128)
                 / 1024) as u8;
 
             let metadata = board.make_move(&Move::null());
@@ -481,7 +479,7 @@ impl Search {
             extensions += 1;
         }
         // Internal Iterative Reduction: A move without a TT move is likely to be a bad move.
-        if !all_node && depth >= 6 && tt_move.is_none() {
+        if !all_node && depth >= 4 && tt_move.is_none() {
             extensions -= 1;
         }
 
@@ -512,10 +510,10 @@ impl Search {
                 && !pv_node
                 && !in_check // Only prune if not currently in check and move won't deliver a check
                 && !move_generation::move_puts_king_in_check(board, &mov)
-                && depth <= 8
+                && depth <= 10
                 && i > 0
                 && !mov.capture()
-                && i32::from(static_eval) + 150 * i32::from(depth) <= i32::from(alpha)
+                && i32::from(static_eval) + 80 * i32::from(depth) <= i32::from(alpha)
             {
                 continue;
             }
@@ -531,8 +529,8 @@ impl Search {
                 && tt_result.best_move == mov
             {
                 let tt_score = tt_result.search_score;
-                let singular_beta = tt_score - depth as i16 / 4;
-                let singular_depth = depth / 2;
+                let singular_beta = tt_score - depth as i16 / 2;
+                let singular_depth = depth / 4;
 
                 // Do a search at this board state but exclude the TT move
                 self.singular_exclude_moves[search_ply as usize] = Some(mov);
@@ -562,7 +560,7 @@ impl Search {
                 // If other moves failed high over the margin, but the margin is less than beta,
                 // It can't be determined if the TT move is singular, so reduce the TT move in favor of other moves
                 else if tt_score >= beta || cut_node {
-                    move_extension = -3;
+                    move_extension = -4;
                 }
             }
 
@@ -583,9 +581,11 @@ impl Search {
                 )
             } else {
                 let full_depth = max(0, depth as i8 + extensions) as u8;
-                let reduced = depth > 2 && sorted_moves.len() > 4 && i > 2;
+                let reduced = depth > 2 && sorted_moves.len() > 3 && i > 1 && !mov.capture();
                 let search_depth = if reduced {
-                    let reduction = (3.0 * i as f32 / sorted_moves.len() as f32).ceil() as i8;
+                    let reduction = ((5.5 * i as f32 / sorted_moves.len() as f32).ceil() as i8
+                        - pv_node as i8)
+                        .max(0);
                     max(0, depth as i8 + extensions - reduction) as u8
                 } else {
                     full_depth
@@ -804,7 +804,7 @@ impl Search {
             {
                 if mov.flags() != 0b0001 && board.get_piece_at_square(mov.ending_index()).is_none()
                 {
-                    value = 12_000; // If killer move is non-capturing, score below captures but above normal quiets
+                    value = 7_000; // If killer move is non-capturing, score below captures but above normal quiets
                 } else {
                     value = i16::MAX - 1; // If capture, score below TT best move but above everything else
                 }
@@ -821,7 +821,7 @@ impl Search {
                     if eval != 0 {
                         eval + (15_000 * eval.signum()) // Bad captures are scored below quiet moves
                     } else {
-                        10_000
+                        12_000
                             + evaluation::mvv_lva(
                                 board.get_piece_at_square(mov.starting_index()).unwrap() as usize,
                                 capture_type as usize,
@@ -850,7 +850,7 @@ impl Search {
     }
 
     fn update_history(&mut self, board: &Board, mov: &Move, bonus: i16) {
-        const MAX_HISTORY: i16 = 2048;
+        const MAX_HISTORY: i16 = 768;
         let clamped_bonus = bonus.clamp(-MAX_HISTORY, MAX_HISTORY);
         let score = &mut self.history[board.white_to_move() as usize]
             [mov.starting_index() as usize][mov.ending_index() as usize];
