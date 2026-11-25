@@ -380,10 +380,21 @@ impl Search {
             }
         }
 
-        let static_eval = tt_result.map_or_else(
+        let mut static_eval = tt_result.map_or_else(
             || evaluation::evaluate(board) * color,
             |tt_result| tt_result.static_score,
         );
+        if let Some(result) = tt_result
+            && !is_mate_score(result.search_score)
+            && match result.node_type {
+                0 => true,
+                -1 => result.search_score > static_eval,
+                1 => result.search_score < static_eval,
+                _ => false,
+            }
+        {
+            static_eval = result.search_score;
+        }
 
         // If at max depth or max plies, start the quiescence search
         if depth == 0 || search_ply >= MAX_PLIES ||
