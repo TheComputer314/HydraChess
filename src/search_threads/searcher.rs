@@ -483,6 +483,85 @@ impl Search {
             }
         }
 
+        // ProbCut
+        // If a winning capture exists and a reduced search shows that the capture is very good,
+        // then this line is probably too good to be true
+        let prob_cut_beta = beta + 200;
+        if !in_check
+            && !mate_finding
+            && depth >= 3
+            && !(tt_result.is_some() && tt_result.unwrap().search_score < prob_cut_beta)
+        {
+            // Only look at tactical moves
+            let sorted_moves =
+                self.sort_moves(board, &moves.filter_tactical_moves(), tt_move, None, color);
+
+            for mov in sorted_moves {
+                if excluded_move.is_some_and(|excluded_move| mov == excluded_move) {
+                    continue;
+                }
+                if evaluation::static_exchange_evaluation(board, &mov) < prob_cut_beta - static_eval
+                {
+                    continue;
+                }
+
+                let metadata = board.make_move(&mov);
+                let search = self.quiescence(
+                    board,
+                    search_state,
+                    move_generation::legal_moves(board),
+                    -prob_cut_beta,
+                    -prob_cut_beta + 1,
+                    search_ply + 1,
+                    -color,
+                );
+                if search.is_none() {
+                    board.unmake_move(&mov, metadata);
+                    return None;
+                }
+                let (mut eval, mut search_plies) = search.unwrap();
+                eval *= -1;
+
+                const PROB_CUT_DELTA_DEPTH: u8 = 4;
+                if eval >= prob_cut_beta && depth > PROB_CUT_DELTA_DEPTH {
+                    let search = self.negamax(
+                        board,
+                        search_state,
+                        depth - PROB_CUT_DELTA_DEPTH,
+                        search_ply + 1,
+                        -prob_cut_beta,
+                        -prob_cut_beta + 1,
+                        -color,
+                        false,
+                        mate_finding,
+                    );
+                    if search.is_none() {
+                        board.unmake_move(&mov, metadata);
+                        return None;
+                    }
+                    (eval, search_plies) = search.unwrap();
+                    eval *= -1;
+                }
+
+                board.unmake_move(&mov, metadata);
+
+                if eval > prob_cut_beta {
+                    search_state.transposition_table.insert(
+                        board.zobrist_hash,
+                        EntryResult {
+                            search_score: eval,
+                            static_score: static_eval,
+                            depth: PROB_CUT_DELTA_DEPTH + 1,
+                            node_type: -1,
+                            best_move: mov,
+                        },
+                        search_ply,
+                    );
+                    return Some((eval, search_plies));
+                }
+            }
+        }
+
         let mut extensions = -1;
         // Single reply extension
         if moves.length == 1 || moves.check {
@@ -726,10 +805,12 @@ impl Search {
             };
         }
 
+        let in_check = moves.check;
+
         // Evaluate if doing nothing is better
         let static_eval = evaluation::evaluate(board) * color;
         // If it is, return immediately
-        if static_eval >= beta {
+        if static_eval >= beta && !in_check {
             return Some((static_eval, search_ply));
         }
         // Otherwise, no move that could be made should be worse than doing nothing
@@ -740,8 +821,8 @@ impl Search {
         let moves = if moves.check {
             moves
         } else {
-            // Otherwise only search captures
-            moves.filter_captures()
+            // Otherwise only search tactical moves
+            moves.filter_tactical_moves()
         };
         if moves.length == 0 {
             return Some((best_value, search_ply));
@@ -754,11 +835,13 @@ impl Search {
                 return None;
             }
 
-            // Do static exchange evaluation
-            let see = evaluation::static_exchange_evaluation(board, &mov);
-            // If it turns out to be bad, don't search it
-            if see < 0 {
-                continue;
+            if !in_check {
+                // Do static exchange evaluation
+                let see = evaluation::static_exchange_evaluation(board, &mov);
+                // If it turns out to be bad, don't search it
+                if see < 0 {
+                    continue;
+                }
             }
 
             let metadata = board.make_move(&mov);
@@ -772,9 +855,8 @@ impl Search {
                 -color,
             );
             board.unmake_move(&mov, metadata);
-            result?;
 
-            let (eval, searched_ply) = result.unwrap();
+            let (eval, searched_ply) = result?;
             let eval = -eval;
 
             if eval > best_value {

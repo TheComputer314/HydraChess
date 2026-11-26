@@ -28,10 +28,11 @@ impl Moves {
         self.length += 1;
     }
 
-    pub fn filter_captures(&self) -> Moves {
+    pub fn filter_tactical_moves(&self) -> Moves {
         let mut moves = Moves::empty();
         for i in 0..self.length {
-            if self.moves[i].capture() {
+            // If capture or queen promotion
+            if self.moves[i].capture() || self.moves[i].flags() == 0b100 {
                 moves.push(self.moves[i]);
             }
         }

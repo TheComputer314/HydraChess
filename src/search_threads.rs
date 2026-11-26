@@ -134,7 +134,8 @@ impl SearchThreads {
             let stop_signal = Arc::clone(&self.stop_signal);
             handles.push(thread::spawn(move || {
                 let mut search = Search::new();
-                let mut seen_new_game_generation = state.new_game_generation.load(Ordering::Acquire);
+                let mut seen_new_game_generation =
+                    state.new_game_generation.load(Ordering::Acquire);
                 loop {
                     state.start_barrier.wait();
                     if state.quit.load(Ordering::Acquire) {

@@ -8,14 +8,14 @@ use std::fmt::Formatter;
 /// - 6 bits: starting square
 /// - 6 bits: ending square
 /// - 3 bits: flags
-///   - 0b0000: None
-///   - 0b0001: En passant
-///   - 0b0010: Castle
-///   - 0b0011: Double pawn push
-///   - 0b0100: Queen promotion
-///   - 0b0101: Rook promotion
-///   - 0b0110: Bishop promotion
-///   - 0b0111: Knight promotion
+///   - 0b000: None
+///   - 0b001: En passant
+///   - 0b010: Castle
+///   - 0b011: Double pawn push
+///   - 0b100: Queen promotion
+///   - 0b101: Rook promotion
+///   - 0b110: Bishop promotion
+///   - 0b111: Knight promotion
 /// - 1 bit: Capture
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Move {
