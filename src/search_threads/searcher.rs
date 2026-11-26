@@ -444,6 +444,9 @@ impl Search {
                 && tt_result.node_type != 1
         });
 
+        // Null move pruning:
+        // Passing our turn is *disastrously* bad, so if passing our turn still ends up with a good score,
+        // then this line of search is too good to be true
         if cut_node
             && !in_check
             && !mate_finding
