@@ -142,7 +142,14 @@ impl Search {
 
                     if search_id == 0 && search_state.timer.elapsed().as_secs_f64() > 1.5 {
                         let mut out = stdout().lock();
-                        writeln!(out, "info depth {} currmove {} currmovenumber {}", depth, mov, i + 1).unwrap();
+                        writeln!(
+                            out,
+                            "info depth {} currmove {} currmovenumber {}",
+                            depth + 1,
+                            mov,
+                            i + 1
+                        )
+                        .unwrap();
                         out.flush().unwrap();
                     }
 
