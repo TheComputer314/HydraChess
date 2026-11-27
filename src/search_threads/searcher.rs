@@ -13,11 +13,63 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 pub(super) const MAX_DEPTH: u8 = 64;
 pub(super) const MAX_PLIES: u8 = 128;
 
+const CONT_PIECES: usize = 12;
+const CONT_SQUARES: usize = 64;
+const CONTINUATION_HISTORY_SIZE: usize =
+    2 * CONT_PIECES * CONT_SQUARES * CONT_PIECES * CONT_SQUARES;
+
+/// Flat index into the continuation history.
+#[inline]
+fn continuation_index(
+    offset: usize,
+    prev_piece: usize,
+    prev_to: usize,
+    curr_piece: usize,
+    curr_to: usize,
+) -> usize {
+    (((offset * CONT_PIECES + prev_piece) * CONT_SQUARES + prev_to) * CONT_PIECES + curr_piece)
+        * CONT_SQUARES
+        + curr_to
+}
+
 pub struct Search {
     pub(crate) nodes_searched: u64,
+    // TODO: Killer moves and singular exclude moves are redundant given the move stack
     killer_moves: [Option<Move>; MAX_PLIES as usize],
     singular_exclude_moves: [Option<Move>; MAX_PLIES as usize],
-    history: [[[i16; 64]; 64]; 2],
+    butterfly_history: Box<[[[i16; 64]; 64]; 2]>,
+    continuation_history: Box<[i16]>,
+    move_stack: Box<[StackEntry; MAX_PLIES as usize + 1]>,
+}
+
+#[derive(Copy, Clone)]
+struct StackEntry {
+    mov: Move,
+    piece_type: u8,
+}
+impl StackEntry {
+    fn new(mov: &Move, board: &Board) -> Self {
+        Self {
+            mov: *mov,
+            piece_type: Self::get_piece_type(mov, board),
+        }
+    }
+
+    fn get_piece_type(mov: &Move, board: &Board) -> u8 {
+        if mov.is_null() {
+            return 12;
+        }
+        board.get_piece_at_square(mov.starting_index()).unwrap() + (board.white_to_move() as u8 * 6)
+    }
+}
+
+impl Default for StackEntry {
+    fn default() -> Self {
+        Self {
+            mov: Move::null(),
+            piece_type: 12,
+        }
+    }
 }
 
 pub struct SearchState<'a> {
@@ -35,12 +87,15 @@ impl Search {
             nodes_searched: 0,
             killer_moves: [None; MAX_PLIES as usize],
             singular_exclude_moves: [None; MAX_PLIES as usize],
-            history: [[[0; 64]; 64]; 2],
+            butterfly_history: Box::new([[[0; 64]; 64]; 2]),
+            continuation_history: vec![0i16; CONTINUATION_HISTORY_SIZE].into_boxed_slice(),
+            move_stack: Box::new([StackEntry::default(); MAX_PLIES as usize + 1]),
         }
     }
 
     pub(super) fn reset_history(&mut self) {
-        self.history = [[[0; 64]; 64]; 2];
+        *self.butterfly_history = [[[0; 64]; 64]; 2];
+        self.continuation_history.fill(0);
     }
 
     fn time_ok_hard(search_state: &SearchState) -> bool {
@@ -57,16 +112,22 @@ impl Search {
         search_state: &SearchState,
         search_id: usize,
     ) -> SearchResult {
+        // State reset
         self.nodes_searched = 0;
         self.killer_moves.fill(None);
         self.singular_exclude_moves.fill(None);
-        for side in &mut self.history {
+        self.move_stack.fill(StackEntry::default());
+        for side in &mut self.butterfly_history {
             for start in side {
                 for end in start {
                     *end /= 2;
                 }
             }
         }
+        for score in self.continuation_history.iter_mut() {
+            *score /= 2;
+        }
+
         let legal_moves = move_generation::legal_moves(board);
         if legal_moves.length == 0 {
             panic!(
@@ -90,7 +151,7 @@ impl Search {
         if let Some(result) = transposition_table_result {
             tt_move = Some(result.best_move);
         }
-        let mut sorted_moves = self.sort_moves(board, &legal_moves, tt_move, None, color);
+        let mut sorted_moves = self.sort_moves(board, &legal_moves, tt_move, None, 0, color);
         if search_id > 0 {
             sorted_moves[1..].shuffle(&mut rand::rng());
         }
@@ -138,6 +199,7 @@ impl Search {
                 let mut depth_best_ply = 0;
                 for i in 0..sorted_moves.len() {
                     let (mov, sort_eval) = &mut sorted_moves[i];
+                    self.move_stack[0] = StackEntry::new(mov, board);
                     let metadata = board.make_move(mov);
 
                     if search_id == 0 && search_state.timer.elapsed().as_secs_f64() > 1.5 {
@@ -462,6 +524,7 @@ impl Search {
                 + 477 * (i32::from(static_eval) - i32::from(beta)).clamp(0, 900) as u32 / 128)
                 / 1024) as u8;
 
+            self.move_stack[search_ply as usize + 1] = StackEntry::new(&Move::null(), board);
             let metadata = board.make_move(&Move::null());
             let result = self.negamax(
                 board,
@@ -486,15 +549,21 @@ impl Search {
         // ProbCut
         // If a winning capture exists and a reduced search shows that the capture is very good,
         // then this line is probably too good to be true
-        let prob_cut_beta = beta + 200;
+        let prob_cut_beta = beta.saturating_add(200);
         if !in_check
             && !mate_finding
             && depth >= 3
             && !(tt_result.is_some() && tt_result.unwrap().search_score < prob_cut_beta)
         {
             // Only look at tactical moves
-            let sorted_moves =
-                self.sort_moves(board, &moves.filter_tactical_moves(), tt_move, None, color);
+            let sorted_moves = self.sort_moves(
+                board,
+                &moves.filter_tactical_moves(),
+                tt_move,
+                None,
+                search_ply,
+                color,
+            );
 
             for mov in sorted_moves {
                 if excluded_move.is_some_and(|excluded_move| mov == excluded_move) {
@@ -505,6 +574,7 @@ impl Search {
                     continue;
                 }
 
+                self.move_stack[search_ply as usize + 1] = StackEntry::new(&mov, board);
                 let metadata = board.make_move(&mov);
                 let search = self.quiescence(
                     board,
@@ -577,6 +647,7 @@ impl Search {
             &moves,
             tt_move,
             self.killer_moves[search_ply as usize],
+            search_ply,
             color,
         );
 
@@ -653,6 +724,7 @@ impl Search {
                 }
             }
 
+            self.move_stack[search_ply as usize + 1] = StackEntry::new(&mov, board);
             let metadata = board.make_move(&mov);
             let search = if i == 0 || depth < 2 {
                 self.negamax(
@@ -745,9 +817,10 @@ impl Search {
                     // If a move is so good it causes a beta cutoff, then it should be given
                     // priority in move ordering
                     self.killer_moves[search_ply as usize] = Some(mov);
-                    self.update_history(board, &mov, (depth * depth) as i16);
+                    self.update_history(board, &mov, search_ply, (depth * depth) as i16);
+                    // Punish moves that were searched before this new best move
                     for mov in &sorted_moves[0..i] {
-                        self.update_history(board, mov, -(depth as i16));
+                        self.update_history(board, mov, search_ply, -(depth as i16));
                     }
                     break;
                 }
@@ -827,7 +900,7 @@ impl Search {
         if moves.length == 0 {
             return Some((best_value, search_ply));
         }
-        let moves = self.sort_moves(board, &moves, None, None, color);
+        let moves = self.sort_moves(board, &moves, None, None, 0, color);
 
         let mut best_search_ply = search_ply;
         for mov in moves {
@@ -880,6 +953,7 @@ impl Search {
         moves: &Moves,
         tt_move: Option<Move>,
         killer_move: Option<Move>,
+        search_ply: u8,
         color: i16,
     ) -> Vec<Move> {
         let mut sorted_moves: Vec<(&Move, i16)> = Vec::with_capacity(moves.length);
@@ -921,10 +995,33 @@ impl Search {
                     }
                 } else {
                     let metadata = board.make_move(mov);
-                    let eval = evaluation::evaluate(board) * color;
+                    let static_eval = evaluation::evaluate(board) * color;
                     board.unmake_move(mov, metadata);
-                    eval + self.history[board.white_to_move() as usize]
-                        [mov.starting_index() as usize][mov.ending_index() as usize]
+                    let mut history_score = self.butterfly_history[board.white_to_move() as usize]
+                        [mov.starting_index() as usize][mov.ending_index() as usize];
+                    // The current piece must be encoded the same way as in update_history
+                    // (color*6 + type), otherwise reads never hit the entries writes populate.
+                    let curr = StackEntry::get_piece_type(mov, board) as usize;
+                    let to = mov.ending_index() as usize;
+                    if let Some(h) = self.read_history(search_ply, 1) {
+                        history_score += 2 * self.continuation_history[continuation_index(
+                            0,
+                            h.piece_type as usize,
+                            h.mov.ending_index() as usize,
+                            curr,
+                            to,
+                        )]
+                    }
+                    if let Some(h) = self.read_history(search_ply, 2) {
+                        history_score += self.continuation_history[continuation_index(
+                            1,
+                            h.piece_type as usize,
+                            h.mov.ending_index() as usize,
+                            curr,
+                            to,
+                        )]
+                    }
+                    static_eval + history_score
                 };
             }
             sorted_moves.push((mov, value));
@@ -933,19 +1030,49 @@ impl Search {
         sorted_moves.iter().map(|mov| *mov.0).collect()
     }
 
+    fn read_history(&self, ply: u8, offset: usize) -> Option<StackEntry> {
+        // `move_stack[k]` holds the move that led to node ply `k`, so the context `offset`
+        // plies before a node at `ply` lives at `ply - offset + 1`.
+        let idx = ply as isize - offset as isize + 1;
+        if idx < 0 || idx as usize >= self.move_stack.len() {
+            return None;
+        }
+        let entry = self.move_stack[idx as usize];
+        (!entry.mov.is_null()).then_some(entry)
+    }
+
+    fn update_history(&mut self, board: &Board, mov: &Move, search_ply: u8, bonus: i16) {
+        const MAX_HISTORY: i32 = 768;
+        let bonus = bonus as i32;
+        let clamped_bonus = bonus.clamp(-MAX_HISTORY, MAX_HISTORY);
+        let butterfly_score = &mut self.butterfly_history[board.white_to_move() as usize]
+            [mov.starting_index() as usize][mov.ending_index() as usize];
+        *butterfly_score += (clamped_bonus
+            - *butterfly_score as i32 * clamped_bonus.abs() / MAX_HISTORY)
+            .clamp(-MAX_HISTORY, MAX_HISTORY) as i16;
+
+        let piece_type = StackEntry::get_piece_type(mov, board);
+        let end_square = mov.ending_index();
+        for offset in 1..=2usize {
+            if let Some(history) = self.read_history(search_ply, offset) {
+                let entry = &mut self.continuation_history[continuation_index(
+                    offset - 1,
+                    history.piece_type as usize,
+                    history.mov.ending_index() as usize,
+                    piece_type as usize,
+                    end_square as usize,
+                )];
+                *entry += (clamped_bonus - *entry as i32 * clamped_bonus.abs() / MAX_HISTORY)
+                    .clamp(-MAX_HISTORY, MAX_HISTORY) as i16;
+            }
+        }
+    }
+
     fn count_nodes(&mut self, nodes_searched: &AtomicU64) {
         self.nodes_searched += 1;
         // Only add to global counter every 2048 nodes to reduce contention
         if self.nodes_searched % 2047 == 0 {
             nodes_searched.fetch_add(2048, Ordering::Relaxed);
         }
-    }
-
-    fn update_history(&mut self, board: &Board, mov: &Move, bonus: i16) {
-        const MAX_HISTORY: i16 = 768;
-        let clamped_bonus = bonus.clamp(-MAX_HISTORY, MAX_HISTORY);
-        let score = &mut self.history[board.white_to_move() as usize]
-            [mov.starting_index() as usize][mov.ending_index() as usize];
-        *score += clamped_bonus - *score * clamped_bonus.abs() / MAX_HISTORY;
     }
 }
