@@ -814,13 +814,15 @@ impl Search {
                 alpha = value;
                 best_move = mov;
                 if alpha >= beta {
-                    // If a move is so good it causes a beta cutoff, then it should be given
-                    // priority in move ordering
-                    self.killer_moves[search_ply as usize] = Some(mov);
-                    self.update_history(board, &mov, search_ply, (depth * depth) as i16);
-                    // Punish moves that were searched before this new best move
-                    for mov in &sorted_moves[0..i] {
-                        self.update_history(board, mov, search_ply, -(depth as i16));
+                    if !mov.capture() && !mov.promotion() {
+                        // If a quiet move is so good it causes a beta cutoff, then it should be given
+                        // priority in move ordering
+                        self.killer_moves[search_ply as usize] = Some(mov);
+                        self.update_history(board, &mov, search_ply, (depth * depth) as i16);
+                        // Punish moves that were searched before this new best move
+                        for mov in &sorted_moves[0..i] {
+                            self.update_history(board, mov, search_ply, -(depth as i16));
+                        }
                     }
                     break;
                 }

@@ -32,7 +32,7 @@ impl Moves {
         let mut moves = Moves::empty();
         for i in 0..self.length {
             // If capture or queen promotion
-            if self.moves[i].capture() || self.moves[i].flags() == 0b100 {
+            if self.moves[i].capture() || self.moves[i].promotion() {
                 moves.push(self.moves[i]);
             }
         }

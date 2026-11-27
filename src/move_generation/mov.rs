@@ -136,6 +136,10 @@ impl Move {
         self.data >> 15 == 1
     }
 
+    pub fn promotion(&self) -> bool {
+        self.flags() >= 0b100
+    }
+
     pub fn is_null(&self) -> bool {
         self.data == 0
     }
