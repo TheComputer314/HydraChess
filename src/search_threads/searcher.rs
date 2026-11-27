@@ -34,25 +34,23 @@ fn continuation_index(
 
 pub struct Search {
     pub(crate) nodes_searched: u64,
-    // TODO: Killer moves and singular exclude moves are redundant given the move stack
-    killer_moves: [Option<Move>; MAX_PLIES as usize],
-    singular_exclude_moves: [Option<Move>; MAX_PLIES as usize],
     butterfly_history: Box<[[[i16; 64]; 64]; 2]>,
     continuation_history: Box<[i16]>,
-    move_stack: Box<[StackEntry; MAX_PLIES as usize + 1]>,
+    move_stack: [StackEntry; MAX_PLIES as usize + 1],
 }
 
 #[derive(Copy, Clone)]
 struct StackEntry {
     mov: Move,
     piece_type: u8,
+    killer: Option<Move>,
+    excluded: Option<Move>,
 }
 impl StackEntry {
-    fn new(mov: &Move, board: &Board) -> Self {
-        Self {
-            mov: *mov,
-            piece_type: Self::get_piece_type(mov, board),
-        }
+    #[inline]
+    fn set_leading_move(&mut self, mov: &Move, board: &Board) {
+        self.mov = *mov;
+        self.piece_type = Self::get_piece_type(mov, board);
     }
 
     fn get_piece_type(mov: &Move, board: &Board) -> u8 {
@@ -68,6 +66,8 @@ impl Default for StackEntry {
         Self {
             mov: Move::null(),
             piece_type: 12,
+            killer: None,
+            excluded: None,
         }
     }
 }
@@ -85,11 +85,9 @@ impl Search {
     pub fn new() -> Self {
         Self {
             nodes_searched: 0,
-            killer_moves: [None; MAX_PLIES as usize],
-            singular_exclude_moves: [None; MAX_PLIES as usize],
             butterfly_history: Box::new([[[0; 64]; 64]; 2]),
             continuation_history: vec![0i16; CONTINUATION_HISTORY_SIZE].into_boxed_slice(),
-            move_stack: Box::new([StackEntry::default(); MAX_PLIES as usize + 1]),
+            move_stack: [StackEntry::default(); MAX_PLIES as usize + 1],
         }
     }
 
@@ -114,8 +112,6 @@ impl Search {
     ) -> SearchResult {
         // State reset
         self.nodes_searched = 0;
-        self.killer_moves.fill(None);
-        self.singular_exclude_moves.fill(None);
         self.move_stack.fill(StackEntry::default());
         for side in &mut self.butterfly_history {
             for start in side {
@@ -199,7 +195,7 @@ impl Search {
                 let mut depth_best_ply = 0;
                 for i in 0..sorted_moves.len() {
                     let (mov, sort_eval) = &mut sorted_moves[i];
-                    self.move_stack[0] = StackEntry::new(mov, board);
+                    self.move_stack[0].set_leading_move(mov, board);
                     let metadata = board.make_move(mov);
 
                     if search_id == 0 && search_state.timer.elapsed().as_secs_f64() > 1.5 {
@@ -421,11 +417,10 @@ impl Search {
         }
         let in_check = moves.check;
 
-        let excluded_move = if search_ply >= MAX_PLIES {
-            None
-        } else {
-            self.singular_exclude_moves[search_ply as usize]
-        };
+        let excluded_move = self
+            .move_stack
+            .get(search_ply as usize)
+            .and_then(|entry| entry.excluded);
 
         let pv_node = search_ply == 0 || i32::from(beta) - i32::from(alpha) > 1;
         let all_node = !(pv_node || cut_node);
@@ -524,7 +519,7 @@ impl Search {
                 + 477 * (i32::from(static_eval) - i32::from(beta)).clamp(0, 900) as u32 / 128)
                 / 1024) as u8;
 
-            self.move_stack[search_ply as usize + 1] = StackEntry::new(&Move::null(), board);
+            self.move_stack[search_ply as usize + 1].set_leading_move(&Move::null(), board);
             let metadata = board.make_move(&Move::null());
             let result = self.negamax(
                 board,
@@ -574,7 +569,7 @@ impl Search {
                     continue;
                 }
 
-                self.move_stack[search_ply as usize + 1] = StackEntry::new(&mov, board);
+                self.move_stack[search_ply as usize + 1].set_leading_move(&mov, board);
                 let metadata = board.make_move(&mov);
                 let search = self.quiescence(
                     board,
@@ -646,7 +641,7 @@ impl Search {
             board,
             &moves,
             tt_move,
-            self.killer_moves[search_ply as usize],
+            self.move_stack[search_ply as usize].killer,
             search_ply,
             color,
         );
@@ -693,7 +688,7 @@ impl Search {
                 let singular_depth = depth / 4;
 
                 // Do a search at this board state but exclude the TT move
-                self.singular_exclude_moves[search_ply as usize] = Some(mov);
+                self.move_stack[search_ply as usize].excluded = Some(mov);
                 let score = self.negamax(
                     board,
                     search_state,
@@ -705,7 +700,7 @@ impl Search {
                     cut_node,
                     mate_finding,
                 );
-                self.singular_exclude_moves[search_ply as usize] = None;
+                self.move_stack[search_ply as usize].excluded = None;
                 let (score, _) = score?;
 
                 // If this move is singular, extend it
@@ -724,7 +719,7 @@ impl Search {
                 }
             }
 
-            self.move_stack[search_ply as usize + 1] = StackEntry::new(&mov, board);
+            self.move_stack[search_ply as usize + 1].set_leading_move(&mov, board);
             let metadata = board.make_move(&mov);
             let search = if i == 0 || depth < 2 {
                 self.negamax(
@@ -817,7 +812,7 @@ impl Search {
                     if !mov.capture() && !mov.promotion() {
                         // If a quiet move is so good it causes a beta cutoff, then it should be given
                         // priority in move ordering
-                        self.killer_moves[search_ply as usize] = Some(mov);
+                        self.move_stack[search_ply as usize].killer = Some(mov);
                         self.update_history(board, &mov, search_ply, (depth * depth) as i16);
                         // Punish moves that were searched before this new best move
                         for mov in &sorted_moves[0..i] {
