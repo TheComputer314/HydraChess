@@ -481,6 +481,7 @@ impl Search {
         {
             return self.quiescence(
                 board,
+                static_eval,
                 search_state,
                 moves,
                 alpha,
@@ -581,6 +582,13 @@ impl Search {
                 let metadata = board.make_move(&mov);
                 let search = self.quiescence(
                     board,
+                    search_state
+                        .transposition_table
+                        .get(board.zobrist_hash, search_ply + 1)
+                        .map_or_else(
+                            || evaluation::evaluate(board) * color,
+                            |tt_result| tt_result.static_score,
+                        ),
                     search_state,
                     move_generation::legal_moves(board),
                     -prob_cut_beta,
@@ -853,6 +861,7 @@ impl Search {
     fn quiescence(
         &mut self,
         board: &mut Board,
+        static_eval: i16,
         search_state: &SearchState,
         moves: Moves,
         alpha: i16,
@@ -885,7 +894,6 @@ impl Search {
         let in_check = moves.check;
 
         // Evaluate if doing nothing is better
-        let static_eval = evaluation::evaluate(board) * color;
         // If it is, return immediately
         if static_eval >= beta && !in_check {
             return Some((static_eval, search_ply));
@@ -924,6 +932,7 @@ impl Search {
             let metadata = board.make_move(&mov);
             let result = self.quiescence(
                 board,
+                evaluation::evaluate(board) * -color,
                 search_state,
                 move_generation::legal_moves(board),
                 -beta,
