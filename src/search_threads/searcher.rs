@@ -1037,7 +1037,7 @@ impl Search {
             };
             sorted_moves.push((mov, value));
         }
-        sorted_moves.sort_by_key(|mov| Reverse(mov.1));
+        sorted_moves.sort_unstable_by_key(|mov| Reverse(mov.1));
         sorted_moves.iter().map(|mov| *mov.0).collect()
     }
 
