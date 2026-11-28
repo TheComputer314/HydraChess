@@ -219,6 +219,23 @@ const fn get_passed_pawn_mask(square: u8, white: bool) -> u64 {
     PASSED_PAWN_MASK[white as usize][(relative_square - 8) as usize]
 }
 
+/// Quick and dirty delta eval for quiet moves
+pub(crate) fn delta_eval(mov: &Move, piece_type: u8, white: bool, pieces_left: u32) -> i16 {
+    let start_value = get_value(
+        piece_type as usize,
+        mov.starting_index() as usize,
+        white,
+        pieces_left,
+    );
+    let end_value = get_value(
+        piece_type as usize,
+        mov.ending_index() as usize,
+        white,
+        pieces_left,
+    );
+    end_value - start_value
+}
+
 pub(crate) fn evaluate(board: &Board) -> i16 {
     if !board.can_force_mate(true) && !board.can_force_mate(false) {
         return 0;
@@ -235,12 +252,6 @@ pub(crate) fn evaluate(board: &Board) -> i16 {
         let white = mask & board.white != 0;
 
         let color_mult = if white { 1 } else { -1 };
-        let piece_square_lookup = if white {
-            square as usize
-        } else {
-            // Flip rank but keep file
-            ((7 - (square / 8)) * 8 + square % 8) as usize
-        };
         let piece_type = if mask & board.pawns != 0 {
             0
         } else if mask & board.knights != 0 {
@@ -256,7 +267,7 @@ pub(crate) fn evaluate(board: &Board) -> i16 {
         } else {
             continue;
         };
-        let value = get_value(piece_type, piece_square_lookup, pieces_left);
+        let value = get_value(piece_type, square as usize, white, pieces_left);
         score += value * color_mult;
 
         if piece_type == 0 {
@@ -279,7 +290,13 @@ pub(crate) fn evaluate(board: &Board) -> i16 {
     score + 200 * (board.can_force_mate(true) as i16 - board.can_force_mate(false) as i16)
 }
 
-fn get_value(piece_type: usize, square: usize, pieces_left: u32) -> i16 {
+fn get_value(piece_type: usize, square: usize, white: bool, pieces_left: u32) -> i16 {
+    let square = if white {
+        square
+    } else {
+        // Flip rank but keep file
+        (7 - (square / 8)) * 8 + square % 8
+    };
     lerp_value(
         OPENING_PIECE_VALUES[piece_type] + OPENING_SQUARE_VALUES[piece_type][square],
         ENDGAME_PIECE_VALUES[piece_type] + ENDGAME_SQUARE_VALUES[piece_type][square],

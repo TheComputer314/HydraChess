@@ -156,7 +156,7 @@ impl Search {
         if let Some(result) = transposition_table_result {
             tt_move = Some(result.best_move);
         }
-        let mut sorted_moves = self.sort_moves(board, &legal_moves, tt_move, [None; 2], 0, color);
+        let mut sorted_moves = self.sort_moves(board, &legal_moves, tt_move, [None; 2], 0);
         if search_id > 0 {
             sorted_moves[1..].shuffle(&mut rand::rng());
         }
@@ -566,7 +566,6 @@ impl Search {
                 tt_move,
                 [None; 2],
                 search_ply,
-                color,
             );
 
             for mov in sorted_moves {
@@ -652,7 +651,6 @@ impl Search {
             tt_move,
             self.move_stack[search_ply as usize].killer,
             search_ply,
-            color,
         );
 
         let mut best_move = sorted_moves[0];
@@ -906,7 +904,7 @@ impl Search {
         if moves.length == 0 {
             return Some((best_value, search_ply));
         }
-        let moves = self.sort_moves(board, &moves, None, [None; 2], 0, color);
+        let moves = self.sort_moves(board, &moves, None, [None; 2], 0);
 
         let mut best_search_ply = search_ply;
         for mov in moves {
@@ -960,7 +958,6 @@ impl Search {
         tt_move: Option<Move>,
         killer_moves: [Option<Move>; 2],
         search_ply: u8,
-        color: i16,
     ) -> Vec<Move> {
         let mut sorted_moves: Vec<(&Move, i16)> = Vec::with_capacity(moves.length);
         for i in 0..moves.length {
@@ -997,9 +994,12 @@ impl Search {
                         )
                 }
             } else {
-                let metadata = board.make_move(mov);
-                let static_eval = evaluation::evaluate(board) * color;
-                board.unmake_move(mov, metadata);
+                let static_eval = evaluation::delta_eval(
+                    mov,
+                    board.get_piece_at_square(mov.starting_index()).unwrap(),
+                    board.white_to_move(),
+                    board.all_pieces().count_ones(),
+                );
                 let mut history_score = self.butterfly_history[board.white_to_move() as usize]
                     [mov.starting_index() as usize][mov.ending_index() as usize];
                 // The current piece must be encoded the same way as in update_history
