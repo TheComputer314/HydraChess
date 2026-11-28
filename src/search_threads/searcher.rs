@@ -43,7 +43,7 @@ pub struct Search {
 struct StackEntry {
     mov: Move,
     piece_type: u8,
-    killer: Option<Move>,
+    killer: [Option<Move>; 2],
     excluded: Option<Move>,
 }
 impl StackEntry {
@@ -59,6 +59,15 @@ impl StackEntry {
         }
         board.get_piece_at_square(mov.starting_index()).unwrap() + (board.white_to_move() as u8 * 6)
     }
+
+    fn push_killer(&mut self, mov: Move) {
+        // Only shift when this is a genuinely new killer, otherwise a repeated
+        // cutoff would fill both slots with the same move and drop the second killer.
+        if self.killer[0] != Some(mov) {
+            self.killer[1] = self.killer[0];
+            self.killer[0] = Some(mov);
+        }
+    }
 }
 
 impl Default for StackEntry {
@@ -66,7 +75,7 @@ impl Default for StackEntry {
         Self {
             mov: Move::null(),
             piece_type: 12,
-            killer: None,
+            killer: [None; 2],
             excluded: None,
         }
     }
@@ -147,7 +156,7 @@ impl Search {
         if let Some(result) = transposition_table_result {
             tt_move = Some(result.best_move);
         }
-        let mut sorted_moves = self.sort_moves(board, &legal_moves, tt_move, None, 0, color);
+        let mut sorted_moves = self.sort_moves(board, &legal_moves, tt_move, [None; 2], 0, color);
         if search_id > 0 {
             sorted_moves[1..].shuffle(&mut rand::rng());
         }
@@ -555,7 +564,7 @@ impl Search {
                 board,
                 &moves.filter_tactical_moves(),
                 tt_move,
-                None,
+                [None; 2],
                 search_ply,
                 color,
             );
@@ -812,7 +821,7 @@ impl Search {
                     if !mov.capture() && !mov.promotion() {
                         // If a quiet move is so good it causes a beta cutoff, then it should be given
                         // priority in move ordering
-                        self.move_stack[search_ply as usize].killer = Some(mov);
+                        self.move_stack[search_ply as usize].push_killer(mov);
                         self.update_history(board, &mov, search_ply, (depth * depth) as i16);
                         // Punish moves that were searched before this new best move
                         for mov in &sorted_moves[0..i] {
@@ -897,7 +906,7 @@ impl Search {
         if moves.length == 0 {
             return Some((best_value, search_ply));
         }
-        let moves = self.sort_moves(board, &moves, None, None, 0, color);
+        let moves = self.sort_moves(board, &moves, None, [None; 2], 0, color);
 
         let mut best_search_ply = search_ply;
         for mov in moves {
@@ -949,78 +958,74 @@ impl Search {
         board: &mut Board,
         moves: &Moves,
         tt_move: Option<Move>,
-        killer_move: Option<Move>,
+        killer_moves: [Option<Move>; 2],
         search_ply: u8,
         color: i16,
     ) -> Vec<Move> {
         let mut sorted_moves: Vec<(&Move, i16)> = Vec::with_capacity(moves.length);
         for i in 0..moves.length {
             let mov = &moves[i];
-            let value;
             if let Some(tt_move) = tt_move
                 && tt_move.eq(mov)
             {
                 // Moves previously evaluated to be the best in the TT are placed first
-                value = i16::MAX;
-            } else if let Some(killer_move) = killer_move
-                && killer_move.eq(mov)
-            {
-                if mov.flags() != 0b0001 && board.get_piece_at_square(mov.ending_index()).is_none()
-                {
-                    value = 7_000; // If killer move is non-capturing, score below captures but above normal quiets
+                sorted_moves.push((mov, i16::MAX));
+                continue;
+            }
+            if let Some(killer_index) = killer_moves.iter().position(|k| *k == Some(*mov)) {
+                // Order above normal quiets but below captures
+                sorted_moves.push((mov, 7_000 - killer_index as i16));
+                continue;
+            }
+
+            let value = if mov.capture() {
+                // En passant moves don't have the captured piece at the end square, so special case it
+                let capture_type = if mov.flags() == 0b0001 {
+                    piece_type::PAWN
                 } else {
-                    value = i16::MAX - 1; // If capture, score below TT best move but above everything else
+                    board.get_piece_at_square(mov.ending_index()).unwrap()
+                };
+
+                let eval = evaluation::static_exchange_evaluation(board, mov);
+                if eval != 0 {
+                    eval + (15_000 * eval.signum()) // Bad captures are scored below quiet moves
+                } else {
+                    12_000
+                        + evaluation::mvv_lva(
+                            board.get_piece_at_square(mov.starting_index()).unwrap() as usize,
+                            capture_type as usize,
+                        )
                 }
             } else {
-                value = if mov.capture() {
-                    // En passant moves don't have the captured piece at the end square, so special case it
-                    let capture_type = if mov.flags() == 0b0001 {
-                        piece_type::PAWN
-                    } else {
-                        board.get_piece_at_square(mov.ending_index()).unwrap()
-                    };
-
-                    let eval = evaluation::static_exchange_evaluation(board, mov);
-                    if eval != 0 {
-                        eval + (15_000 * eval.signum()) // Bad captures are scored below quiet moves
-                    } else {
-                        12_000
-                            + evaluation::mvv_lva(
-                                board.get_piece_at_square(mov.starting_index()).unwrap() as usize,
-                                capture_type as usize,
-                            )
-                    }
-                } else {
-                    let metadata = board.make_move(mov);
-                    let static_eval = evaluation::evaluate(board) * color;
-                    board.unmake_move(mov, metadata);
-                    let mut history_score = self.butterfly_history[board.white_to_move() as usize]
-                        [mov.starting_index() as usize][mov.ending_index() as usize];
-                    // The current piece must be encoded the same way as in update_history
-                    // (color*6 + type), otherwise reads never hit the entries writes populate.
-                    let curr = StackEntry::get_piece_type(mov, board) as usize;
-                    let to = mov.ending_index() as usize;
-                    if let Some(h) = self.read_history(search_ply, 1) {
-                        history_score += 2 * self.continuation_history[continuation_index(
-                            0,
-                            h.piece_type as usize,
-                            h.mov.ending_index() as usize,
-                            curr,
-                            to,
-                        )]
-                    }
-                    if let Some(h) = self.read_history(search_ply, 2) {
-                        history_score += self.continuation_history[continuation_index(
-                            1,
-                            h.piece_type as usize,
-                            h.mov.ending_index() as usize,
-                            curr,
-                            to,
-                        )]
-                    }
-                    static_eval + history_score
-                };
-            }
+                let metadata = board.make_move(mov);
+                let static_eval = evaluation::evaluate(board) * color;
+                board.unmake_move(mov, metadata);
+                let mut history_score = self.butterfly_history[board.white_to_move() as usize]
+                    [mov.starting_index() as usize][mov.ending_index() as usize];
+                // The current piece must be encoded the same way as in update_history
+                // (color*6 + type), otherwise reads never hit the entries writes populate.
+                let curr = StackEntry::get_piece_type(mov, board) as usize;
+                let to = mov.ending_index() as usize;
+                if let Some(h) = self.read_history(search_ply, 1) {
+                    history_score += 2 * self.continuation_history[continuation_index(
+                        0,
+                        h.piece_type as usize,
+                        h.mov.ending_index() as usize,
+                        curr,
+                        to,
+                    )]
+                }
+                if let Some(h) = self.read_history(search_ply, 2) {
+                    history_score += self.continuation_history[continuation_index(
+                        1,
+                        h.piece_type as usize,
+                        h.mov.ending_index() as usize,
+                        curr,
+                        to,
+                    )]
+                }
+                static_eval + history_score
+            };
             sorted_moves.push((mov, value));
         }
         sorted_moves.sort_by_key(|mov| Reverse(mov.1));
