@@ -6,9 +6,16 @@ version = 4
 name = "HydraChess"
 version = "0.1.0"
 dependencies = [
+ "bit-iter",
  "minstant",
  "rand",
 ]
+
+[[package]]
+name = "bit-iter"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3aed2f94158d66c1ecc94090b0365bcedee18a59adc784761259a097038952d0"
 
 [[package]]
 name = "bumpalo"

@@ -1,6 +1,7 @@
 use crate::move_generation::mov::Move;
 use crate::move_generation::mov::squares::mask;
 use crate::move_generation::{Board, move_lookup};
+use bit_iter::BitIter;
 use std::cmp::max;
 
 macro_rules! piece_square_table {
@@ -237,14 +238,18 @@ pub(crate) fn delta_eval(mov: &Move, piece_type: u8, white: bool, pieces_left: u
 }
 
 pub(crate) fn evaluate(board: &Board) -> i16 {
-    if !board.can_force_mate(true) && !board.can_force_mate(false) {
+    let white_can_force_mate = board.can_force_mate(true);
+    let black_can_force_mate = board.can_force_mate(false);
+
+    if !white_can_force_mate && !black_can_force_mate {
         return 0;
     }
 
     let mut score = 0;
     let pieces_left = board.white.count_ones() + board.black.count_ones();
 
-    for square in 0..64 {
+    for square in BitIter::from(board.all_pieces()) {
+        let square = square as u8;
         let mask = mask(square);
         if mask & board.all_pieces() == 0 {
             continue;
@@ -287,7 +292,7 @@ pub(crate) fn evaluate(board: &Board) -> i16 {
         }
     }
 
-    score + 200 * (board.can_force_mate(true) as i16 - board.can_force_mate(false) as i16)
+    score + 200 * (white_can_force_mate as i16 - black_can_force_mate as i16)
 }
 
 fn get_value(piece_type: usize, square: usize, white: bool, pieces_left: u32) -> i16 {

@@ -9,3 +9,4 @@ edition = "2024"
 [dependencies]
 rand = "0.10.3"
 minstant = "0.1.7"
+bit-iter = "1.4.0"

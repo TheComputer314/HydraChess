@@ -1,5 +1,6 @@
 use crate::move_generation::mov::piece_type;
 use crate::move_generation::mov::squares::mask;
+use bit_iter::BitIter;
 pub(crate) use board_state::Board;
 use mov::Move;
 use std::ops::{Index, IndexMut};
@@ -72,8 +73,12 @@ pub fn legal_moves(board: &Board) -> Moves {
     let king_index = king_mask.trailing_zeros() as u8;
     let pseudo_legal_king_moves = move_lookup::possible_king_moves(king_index) & !friendly_pieces;
     let legal_king_moves = pseudo_legal_king_moves & !king_danger_mask;
-    for i in get_indices_of_bits(legal_king_moves) {
-        moves.push(Move::regular(king_index, i, enemy_pieces & mask(i) != 0));
+    for i in BitIter::from(legal_king_moves) {
+        moves.push(Move::regular(
+            king_index,
+            i as u8,
+            enemy_pieces & mask(i as u8) != 0,
+        ));
     }
 
     // If in double check, only legal moves are non-castling king moves
@@ -137,11 +142,11 @@ pub fn legal_moves(board: &Board) -> Moves {
     let mut diagonal_pin_rays = Vec::new();
 
     let attacking_cardinal_sliders = king_rook_mask & enemy_pieces & (board.rooks | board.queens);
-    for i in get_indices_of_bits(attacking_cardinal_sliders) {
+    for i in BitIter::from(attacking_cardinal_sliders) {
         let attacked_squares = move_lookup::
         // We invert the king rook mask to block any moves that are not on the ray between the king and the attacker
         // But also add the king mask to block the ray from going past the king
-        possible_rook_moves(i, !king_rook_mask | king_mask)
+        possible_rook_moves(i as u8, !king_rook_mask | king_mask)
             & king_rook_mask;
         if (attacked_squares & friendly_pieces).count_ones() == 1 {
             cardinal_pin_rays.push(attacked_squares | (1 << i));
@@ -149,7 +154,8 @@ pub fn legal_moves(board: &Board) -> Moves {
     }
     let attacking_diagonal_sliders =
         king_bishop_mask & enemy_pieces & (board.bishops | board.queens);
-    for i in get_indices_of_bits(attacking_diagonal_sliders) {
+    for i in BitIter::from(attacking_diagonal_sliders) {
+        let i = i as u8;
         let attacked_squares =
             move_lookup::possible_bishop_moves(i, !king_bishop_mask | king_mask) & king_bishop_mask;
         if (attacked_squares & friendly_pieces).count_ones() == 1 {
@@ -158,7 +164,8 @@ pub fn legal_moves(board: &Board) -> Moves {
     }
 
     // All other moves are restricted by the capture and block masks
-    'friendly_piece_loop: for i in get_indices_of_bits(friendly_pieces & !king_mask) {
+    'friendly_piece_loop: for i in BitIter::from(friendly_pieces & !king_mask) {
+        let i = i as u8;
         let start_mask = 1 << i;
         if board.pawns & start_mask != 0 {
             let mut cardinal_pin_mask = u64::MAX;
@@ -360,8 +367,8 @@ pub fn legal_moves(board: &Board) -> Moves {
             let legal_end_squares = capture_mask | block_mask;
             let knight_moves =
                 move_lookup::possible_knight_moves(i) & legal_end_squares & !friendly_pieces;
-            for j in get_indices_of_bits(knight_moves) {
-                moves.push(Move::regular(i, j, enemy_pieces & mask(j) != 0));
+            for j in BitIter::from(knight_moves) {
+                moves.push(Move::regular(i, j as u8, enemy_pieces & mask(j as u8) != 0));
             }
         } else if board.bishops & start_mask != 0 {
             // If pinned by a horizontal ray, the bishop cannot move
@@ -383,8 +390,8 @@ pub fn legal_moves(board: &Board) -> Moves {
             let bishop_moves = move_lookup::possible_bishop_moves(i, board.all_pieces())
                 & legal_end_squares
                 & !friendly_pieces;
-            for j in get_indices_of_bits(bishop_moves) {
-                moves.push(Move::regular(i, j, enemy_pieces & mask(j) != 0));
+            for j in BitIter::from(bishop_moves) {
+                moves.push(Move::regular(i, j as u8, enemy_pieces & mask(j as u8) != 0));
             }
         } else if board.rooks & start_mask != 0 {
             // If pinned by a diagonal ray, the rook cannot move
@@ -406,8 +413,8 @@ pub fn legal_moves(board: &Board) -> Moves {
             let rook_moves = move_lookup::possible_rook_moves(i, board.all_pieces())
                 & legal_end_squares
                 & !friendly_pieces;
-            for j in get_indices_of_bits(rook_moves) {
-                moves.push(Move::regular(i, j, enemy_pieces & mask(j) != 0));
+            for j in BitIter::from(rook_moves) {
+                moves.push(Move::regular(i, j as u8, enemy_pieces & mask(j as u8) != 0));
             }
         } else if board.queens & start_mask != 0 {
             // If pinned by a ray, the queen can only move along that ray
@@ -432,8 +439,8 @@ pub fn legal_moves(board: &Board) -> Moves {
             let queen_moves = move_lookup::possible_queen_moves(i, board.all_pieces())
                 & legal_end_squares
                 & !friendly_pieces;
-            for j in get_indices_of_bits(queen_moves) {
-                moves.push(Move::regular(i, j, enemy_pieces & mask(j) != 0));
+            for j in BitIter::from(queen_moves) {
+                moves.push(Move::regular(i, j as u8, enemy_pieces & mask(j as u8) != 0));
             }
         }
     }
@@ -454,7 +461,8 @@ fn king_danger_mask(
     let mut king_danger_mask: u64 = 0;
     let mut checkers = 0;
     let mut checker_index = 0;
-    for i in get_indices_of_bits(enemy_pieces) {
+    for i in BitIter::from(enemy_pieces) {
+        let i = i as u8;
         let mask = 1 << i;
         if board.pawns & mask != 0 {
             let mut pawn_danger_mask = 0;
@@ -506,17 +514,6 @@ fn king_danger_mask(
     (king_danger_mask, checkers, checker_index)
 }
 
-fn get_indices_of_bits(bits: u64) -> Vec<u8> {
-    let mut indices = Vec::new();
-    let mut bits = bits;
-    while bits != 0 {
-        let trailing_zeros = bits.trailing_zeros();
-        bits ^= 1 << trailing_zeros;
-        indices.push(trailing_zeros as u8);
-    }
-    indices
-}
-
 /// Check if a move puts the king in check.
 ///
 /// Roughly 90-95% accurate, since this doesn't account for discovered check, en passant, etc.,
@@ -566,13 +563,6 @@ pub fn move_puts_king_in_check(board: &Board, mov: &Move) -> bool {
 mod tests {
     use super::*;
     use std::time::Instant;
-
-    #[test]
-    fn test_get_squares_of_moves() {
-        let moves = 4462742033;
-        let squares = get_indices_of_bits(moves);
-        assert_eq!(squares, vec![0, 4, 9, 11, 25, 27, 32]);
-    }
 
     #[test]
     fn test_bishop_pin() {
